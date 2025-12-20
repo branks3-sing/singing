@@ -9,7 +9,8 @@ from urllib.parse import unquote, quote
 st.set_page_config(page_title="🎙 sing-along", layout="wide")
 
 # --------- CONFIG: set your deployed app URL here ----------
-APP_URL = "https://karaoke-song.onrender.com/"
+APP_URL = "https://web-production-fd3c75.up.railway.app/"
+
 
 # ----------------------------------------------------------
 
