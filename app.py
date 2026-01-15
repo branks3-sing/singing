@@ -12,7 +12,7 @@ from datetime import datetime
 st.set_page_config(page_title="𝄞 sing-along", layout="wide")
 
 # --------- CONFIG: set your deployed app URL here ----------
-APP_URL = "https://singing.streamlit.app/"
+APP_URL = "http://54.252.242.23:8000/"
 
 # 🔒 SECURITY: Environment Variables for Password Hashes
 ADMIN_HASH = os.getenv("ADMIN_HASH", "")
