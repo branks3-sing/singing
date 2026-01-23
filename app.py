@@ -67,6 +67,11 @@ ADMIN_HASH = os.getenv("ADMIN_HASH", "")
 USER1_HASH = os.getenv("USER1_HASH", "")
 USER2_HASH = os.getenv("USER2_HASH", "")
 
+# =============== FILE SIZE LIMITS (IN BYTES) ===============
+# Streamlit Cloud has a 200MB limit per file, but let's be conservative
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB per file
+MAX_TOTAL_UPLOAD = 200 * 1024 * 1024  # 200MB total
+
 # Base directories
 base_dir = os.getcwd()
 media_dir = os.path.join(base_dir, "media")
@@ -106,6 +111,47 @@ def get_shared_links_cached():
 def get_metadata_cached():
     """Get metadata with caching"""
     return load_metadata()
+
+# =============== FILE VALIDATION FUNCTIONS ===============
+def validate_file_size(file, file_type="original"):
+    """Validate file size before upload"""
+    if file is None:
+        return True, None
+    
+    file_size = len(file.getvalue())
+    
+    if file_size > MAX_FILE_SIZE:
+        size_mb = file_size / (1024 * 1024)
+        max_mb = MAX_FILE_SIZE / (1024 * 1024)
+        return False, f"❌ {file_type} file is too large ({size_mb:.1f}MB). Maximum allowed: {max_mb:.0f}MB"
+    
+    return True, None
+
+def validate_upload_size(original_file, accompaniment_file, lyrics_file):
+    """Validate total upload size"""
+    total_size = 0
+    
+    if original_file:
+        total_size += len(original_file.getvalue())
+    if accompaniment_file:
+        total_size += len(accompaniment_file.getvalue())
+    if lyrics_file:
+        total_size += len(lyrics_file.getvalue())
+    
+    if total_size > MAX_TOTAL_UPLOAD:
+        total_mb = total_size / (1024 * 1024)
+        max_mb = MAX_TOTAL_UPLOAD / (1024 * 1024)
+        return False, f"❌ Total upload size ({total_mb:.1f}MB) exceeds maximum limit ({max_mb:.0f}MB)"
+    
+    return True, None
+
+def compress_audio_file(file_bytes, file_name):
+    """Simple audio file compression (placeholder - in production use proper audio compression)"""
+    # For now, we'll just check if file is too large
+    if len(file_bytes) > (50 * 1024 * 1024):  # 50MB
+        st.warning(f"⚠️ File '{file_name}' is large ({len(file_bytes)/(1024*1024):.1f}MB). Consider compressing it before upload.")
+    
+    return file_bytes  # Return as-is for now
 
 # =============== PERSISTENT SESSION DATABASE ===============
 def init_session_db():
@@ -227,7 +273,7 @@ def save_metadata_to_db(song_name, uploaded_by):
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO metadata 
                      (song_name, uploaded_by, timestamp)
-                     VALUES (?, ?, ?)''',
+                     VALUES (?, ?, ?, ?)''',
                   (song_name, uploaded_by, time.time()))
         conn.commit()
         conn.close()
@@ -465,6 +511,8 @@ if "search_query" not in st.session_state:
     st.session_state.search_query = ""
 if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = None
+if "upload_progress" not in st.session_state:
+    st.session_state.upload_progress = 0
 
 # Load persistent session data
 load_session_from_db()
@@ -896,6 +944,11 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         color: #764ba2 !important;
         transform: scale(1.1);
     }
+    
+    /* PROGRESS BAR STYLING */
+    .stProgress > div > div > div {
+        background-color: #ff0066;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -910,6 +963,14 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
     # ================= UPLOAD SONGS =================
     if page_sidebar == "Upload Songs":
         st.subheader("📤 Upload New Song")
+        
+        # Display file size limits
+        st.info(f"""
+        **⚠️ File Size Limits:**
+        - Maximum per file: {MAX_FILE_SIZE/(1024*1024):.0f}MB
+        - Maximum total upload: {MAX_TOTAL_UPLOAD/(1024*1024):.0f}MB
+        - For large files, consider compressing them before upload
+        """)
 
         # ✅ SONG NAME INPUT
         song_name_input = st.text_input(
@@ -922,23 +983,34 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         with col1:
             # UPDATED: Support multiple audio formats including MPEG
             uploaded_original = st.file_uploader(
-                "Original Song (_original.*)",
+                f"Original Song (_original.*) - Max {MAX_FILE_SIZE/(1024*1024):.0f}MB",
                 type=["mp3", "mpeg", "m4a", "wav", "mp4"],
                 key="original_upload"
             )
         with col2:
             # UPDATED: Support multiple audio formats including MPEG
             uploaded_accompaniment = st.file_uploader(
-                "Accompaniment (_accompaniment.*)",
+                f"Accompaniment (_accompaniment.*) - Max {MAX_FILE_SIZE/(1024*1024):.0f}MB",
                 type=["mp3", "mpeg", "m4a", "wav", "mp4"],
                 key="acc_upload"
             )
         with col3:
             uploaded_lyrics_image = st.file_uploader(
-                "Lyrics Image (_lyrics_bg.jpg / .png)",
+                f"Lyrics Image (_lyrics_bg.*) - Max {MAX_FILE_SIZE/(1024*1024):.0f}MB",
                 type=["jpg", "jpeg", "png", "webp", "bmp"],
                 key="lyrics_upload"
             )
+
+        # Display file sizes if files are uploaded
+        if uploaded_original:
+            size_mb = len(uploaded_original.getvalue()) / (1024 * 1024)
+            st.caption(f"Original file size: {size_mb:.1f}MB")
+        if uploaded_accompaniment:
+            size_mb = len(uploaded_accompaniment.getvalue()) / (1024 * 1024)
+            st.caption(f"Accompaniment file size: {size_mb:.1f}MB")
+        if uploaded_lyrics_image:
+            size_mb = len(uploaded_lyrics_image.getvalue()) / (1024 * 1024)
+            st.caption(f"Lyrics image size: {size_mb:.1f}MB")
 
         if st.button("⬆ Upload Song", key="upload_song_btn"):
             if not song_name_input:
@@ -946,45 +1018,103 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             elif not uploaded_original or not uploaded_accompaniment or not uploaded_lyrics_image:
                 st.error("❌ Please upload all required files")
             else:
-                song_name = song_name_input.strip()
-
-                # Get file extensions
-                original_ext = os.path.splitext(uploaded_original.name)[1]
-                acc_ext = os.path.splitext(uploaded_accompaniment.name)[1]
-                lyrics_ext = os.path.splitext(uploaded_lyrics_image.name)[1]
-
-                # Construct file paths
-                original_path = os.path.join(songs_dir, f"{song_name}_original{original_ext}")
-                acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment{acc_ext}")
-                lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{lyrics_ext}")
-
-                # Save files
-                with open(original_path, "wb") as f:
-                    f.write(uploaded_original.getbuffer())
-                with open(acc_path, "wb") as f:
-                    f.write(uploaded_accompaniment.getbuffer())
-                with open(lyrics_path, "wb") as f:
-                    f.write(uploaded_lyrics_image.getbuffer())
-
-                # Save metadata
-                metadata = get_metadata_cached()
-                metadata[song_name] = {
-                    "uploaded_by": st.session_state.user,
-                    "timestamp": str(time.time()),
-                    "original_format": original_ext,
-                    "accompaniment_format": acc_ext,
-                    "lyrics_format": lyrics_ext
-                }
-                save_metadata(metadata)
-
-                # Clear cache
-                get_song_files_cached.clear()
-                get_metadata_cached.clear()
-
-                st.success(f"✅ Song Uploaded Successfully: {song_name}")
-                st.balloons()
-                time.sleep(1)
-                st.rerun()
+                # Validate file sizes
+                original_valid, original_error = validate_file_size(uploaded_original, "Original song")
+                acc_valid, acc_error = validate_file_size(uploaded_accompaniment, "Accompaniment")
+                lyrics_valid, lyrics_error = validate_file_size(uploaded_lyrics_image, "Lyrics image")
+                
+                if not original_valid:
+                    st.error(original_error)
+                elif not acc_valid:
+                    st.error(acc_error)
+                elif not lyrics_valid:
+                    st.error(lyrics_error)
+                else:
+                    # Validate total upload size
+                    total_valid, total_error = validate_upload_size(
+                        uploaded_original, uploaded_accompaniment, uploaded_lyrics_image
+                    )
+                    
+                    if not total_valid:
+                        st.error(total_error)
+                    else:
+                        song_name = song_name_input.strip()
+                        
+                        # Create progress bar
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        try:
+                            # Step 1: Prepare files
+                            status_text.text("🔄 Preparing files...")
+                            progress_bar.progress(10)
+                            
+                            # Get file extensions
+                            original_ext = os.path.splitext(uploaded_original.name)[1]
+                            acc_ext = os.path.splitext(uploaded_accompaniment.name)[1]
+                            lyrics_ext = os.path.splitext(uploaded_lyrics_image.name)[1]
+                            
+                            # Construct file paths
+                            original_path = os.path.join(songs_dir, f"{song_name}_original{original_ext}")
+                            acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment{acc_ext}")
+                            lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{lyrics_ext}")
+                            
+                            # Step 2: Save original file
+                            status_text.text(f"💾 Saving original song ({len(uploaded_original.getvalue())/(1024*1024):.1f}MB)...")
+                            with open(original_path, "wb") as f:
+                                f.write(uploaded_original.getbuffer())
+                            progress_bar.progress(40)
+                            
+                            # Step 3: Save accompaniment file
+                            status_text.text(f"💾 Saving accompaniment ({len(uploaded_accompaniment.getvalue())/(1024*1024):.1f}MB)...")
+                            with open(acc_path, "wb") as f:
+                                f.write(uploaded_accompaniment.getbuffer())
+                            progress_bar.progress(70)
+                            
+                            # Step 4: Save lyrics image
+                            status_text.text(f"💾 Saving lyrics image ({len(uploaded_lyrics_image.getvalue())/(1024*1024):.1f}MB)...")
+                            with open(lyrics_path, "wb") as f:
+                                f.write(uploaded_lyrics_image.getbuffer())
+                            progress_bar.progress(90)
+                            
+                            # Step 5: Save metadata
+                            status_text.text("📝 Saving metadata...")
+                            metadata = get_metadata_cached()
+                            metadata[song_name] = {
+                                "uploaded_by": st.session_state.user,
+                                "timestamp": str(time.time()),
+                                "original_format": original_ext,
+                                "original_size": len(uploaded_original.getvalue()),
+                                "accompaniment_format": acc_ext,
+                                "accompaniment_size": len(uploaded_accompaniment.getbuffer()),
+                                "lyrics_format": lyrics_ext,
+                                "lyrics_size": len(uploaded_lyrics_image.getbuffer())
+                            }
+                            save_metadata(metadata)
+                            
+                            # Clear cache
+                            get_song_files_cached.clear()
+                            get_metadata_cached.clear()
+                            
+                            progress_bar.progress(100)
+                            status_text.text("✅ Upload complete!")
+                            
+                            st.success(f"✅ Song '{song_name}' uploaded successfully!")
+                            st.balloons()
+                            
+                            # Wait and refresh
+                            time.sleep(2)
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error during upload: {str(e)}")
+                            # Clean up partially uploaded files
+                            if os.path.exists(original_path):
+                                os.remove(original_path)
+                            if os.path.exists(acc_path):
+                                os.remove(acc_path)
+                            if os.path.exists(lyrics_path):
+                                os.remove(lyrics_path)
 
     # ================= SONGS LIST =================
     elif page_sidebar == "Songs List":
