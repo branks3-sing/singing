@@ -8,85 +8,10 @@ from urllib.parse import unquote, quote
 import time
 import sqlite3
 from datetime import datetime
-from PIL import Image, ImageDraw  # Fixed: Added ImageDraw
+import shutil
+from PIL import Image, ImageDraw
 import requests
 from io import BytesIO
-
-# =============== FIX TITLE BAR FIRST ===============
-# IMPORTANT: st.set_page_config MUST be the FIRST Streamlit command
-# This prevents Streamlit from overriding our title
-
-# Set page config with empty title initially
-st.set_page_config(
-    page_title="Sing Along",  # Fixed: Removed leading space
-    page_icon="🎤",  # Use emoji as fallback
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# =============== FORCE CUSTOM TITLE WITH JAVASCRIPT ===============
-st.markdown("""
-<script>
-// Force the browser tab title to be "Sing Along"
-document.title = "Sing Along - Karaoke App";
-
-// Override document.title setter to prevent Streamlit from changing it
-const originalTitleSetter = Object.getOwnPropertyDescriptor(Document.prototype, 'title').set;
-Object.defineProperty(document, 'title', {
-    set: function(value) {
-        // Only allow setting if it contains "Sing Along"
-        if (value.includes("Sing Along")) {
-            originalTitleSetter.call(document, value);
-        } else {
-            // Otherwise, keep it as "Sing Along"
-            originalTitleSetter.call(document, "Sing Along - Karaoke App");
-        }
-    },
-    get: function() {
-        return "Sing Along - Karaoke App";
-    }
-});
-
-// Also override the window.name property
-Object.defineProperty(window, 'name', {
-    get: function() { return "Sing Along"; },
-    set: function(value) { /* Ignore attempts to change */ }
-});
-
-// Periodically check and fix title
-setInterval(function() {
-    if (!document.title.includes("Sing Along")) {
-        document.title = "Sing Along - Karaoke App";
-    }
-}, 1000);
-</script>
-
-<style>
-/* Hide Streamlit's default header completely */
-header { 
-    visibility: hidden !important; 
-    height: 0 !important;
-}
-
-/* Hide Streamlit's header decoration */
-.st-emotion-cache-18ni7ap {
-    display: none !important;
-}
-
-/* Custom header style for the app */
-.custom-app-header {
-    position: relative;
-    text-align: center;
-    padding: 10px;
-    margin-bottom: 20px;
-    background: linear-gradient(90deg, #1E3A8A, #3B82F6);
-    color: white;
-    border-radius: 10px;
-    font-size: 1.5rem;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # =============== LOGO DOWNLOAD AND LOADING ===============
 def ensure_logo_exists():
@@ -99,8 +24,7 @@ def ensure_logo_exists():
     # If logo doesn't exist locally, try to download from GitHub
     if not os.path.exists(logo_path):
         try:
-            # Fixed: Use raw GitHub URL instead of GitHub page URL
-            logo_url = "https://raw.githubusercontent.com/branks3-sing/singing/main/media/logo/logoo.png"
+            logo_url = "https://github.com/branks3-sing/singing/blob/main/media/logo/logoo.png"
             response = requests.get(logo_url, timeout=10)
             if response.status_code == 200:
                 with open(logo_path, "wb") as f:
@@ -116,10 +40,8 @@ def ensure_logo_exists():
         except Exception as e:
             print(f"⚠️ Could not download logo: {e}")
             # Create a minimal placeholder
-            img = Image.new('RGB', (512, 512), color='#1E3A8A')
-            d = ImageDraw.Draw(img)
-            d.text((200, 220), "🎤", fill='white', font_size=100)
-            img.save(logo_path, 'PNG')
+            with open(logo_path, 'wb') as f:
+                f.write(b'')
     
     return logo_path
 
@@ -127,9 +49,15 @@ def ensure_logo_exists():
 try:
     logo_path = ensure_logo_exists()
     page_icon = Image.open(logo_path)
-except Exception as e:
-    print(f"Error loading logo: {e}")
-    page_icon = "🎤"  # Fallback to emoji if logo fails
+except:
+    page_icon = "𝄞"  # Fallback to emoji if logo fails
+
+# Set page config with logo as icon
+st.set_page_config(
+    page_title=" Sing Along",
+    page_icon=page_icon,
+    layout="wide"
+)
 
 # --------- CONFIG: set your deployed app URL here ----------
 APP_URL = "https://www.branks3.com/"
@@ -501,6 +429,7 @@ def process_query_params():
 
         save_session_to_db()
 
+
 # =============== INITIALIZE SESSION ===============
 check_and_create_session_id()
 
@@ -527,8 +456,11 @@ process_query_params()
 # Get cached metadata
 metadata = get_metadata_cached()
 
-# Logo for login page
+# Logo
 default_logo_path = os.path.join(logo_dir, "branks3_logo.png")
+if not os.path.exists(default_logo_path):
+    # Don't show uploader on login page to avoid rerun issues
+    pass
 logo_b64 = file_to_base64(default_logo_path) if os.path.exists(default_logo_path) else ""
 
 # =============== RESPONSIVE LOGIN PAGE (NO SCROLLING) ===============
@@ -1434,7 +1366,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Sing Along - Karaoke</title>
+  <title>🎤 sing_along </title>
 <style>
 * { 
     margin: 0; 
