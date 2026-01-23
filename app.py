@@ -92,10 +92,10 @@ def get_song_files_cached():
         return songs
     
     for f in os.listdir(songs_dir):
-        if f.endswith("_original.mp3"):
-            song_name = f.replace("_original.mp3", "")
+        if f.endswith(("_original.mp3", "_original.mpeg", "_original.m4a", "_original.wav", "_original.mp4")):
+            song_name = f.replace("_original.mp3", "").replace("_original.mpeg", "").replace("_original.m4a", "").replace("_original.wav", "").replace("_original.mp4", "")
             songs.append(song_name)
-    return sorted(songs)
+    return sorted(list(set(songs)))
 
 @st.cache_data(ttl=5)
 def get_shared_links_cached():
@@ -362,21 +362,41 @@ def get_uploaded_songs(show_unshared=False):
     """Get list of uploaded songs"""
     return get_song_files_cached()
 
+def get_song_file_path(song_name, file_type="original"):
+    """Get the actual file path for a song, supporting multiple formats"""
+    if file_type == "original":
+        # Check for various audio formats
+        for ext in [".mp3", ".mpeg", ".m4a", ".wav", ".mp4"]:
+            file_path = os.path.join(songs_dir, f"{song_name}_original{ext}")
+            if os.path.exists(file_path):
+                return file_path
+        return None
+    elif file_type == "accompaniment":
+        # Check for various audio formats
+        for ext in [".mp3", ".mpeg", ".m4a", ".wav", ".mp4"]:
+            file_path = os.path.join(songs_dir, f"{song_name}_accompaniment{ext}")
+            if os.path.exists(file_path):
+                return file_path
+        return None
+    return None
+
 def delete_song_files(song_name):
     """Delete all files related to a song"""
     try:
-        # Delete original song file
-        original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
-        if os.path.exists(original_path):
-            os.remove(original_path)
+        # Delete all possible original song files
+        for ext in [".mp3", ".mpeg", ".m4a", ".wav", ".mp4"]:
+            original_path = os.path.join(songs_dir, f"{song_name}_original{ext}")
+            if os.path.exists(original_path):
+                os.remove(original_path)
         
-        # Delete accompaniment file
-        acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
-        if os.path.exists(acc_path):
-            os.remove(acc_path)
+        # Delete all possible accompaniment files
+        for ext in [".mp3", ".mpeg", ".m4a", ".wav", ".mp4"]:
+            acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment{ext}")
+            if os.path.exists(acc_path):
+                os.remove(acc_path)
         
         # Delete lyrics image files
-        for ext in [".jpg", ".jpeg", ".png"]:
+        for ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]:
             lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{ext}")
             if os.path.exists(lyrics_path):
                 os.remove(lyrics_path)
@@ -428,7 +448,6 @@ def process_query_params():
             st.session_state.role = "guest"
 
         save_session_to_db()
-
 
 # =============== INITIALIZE SESSION ===============
 check_and_create_session_id()
@@ -901,21 +920,23 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
 
         col1, col2, col3 = st.columns(3)
         with col1:
+            # UPDATED: Support multiple audio formats including MPEG
             uploaded_original = st.file_uploader(
-                "Original Song (_original.mp3)",
-                type=["mp3"],
+                "Original Song (_original.*)",
+                type=["mp3", "mpeg", "m4a", "wav", "mp4"],
                 key="original_upload"
             )
         with col2:
+            # UPDATED: Support multiple audio formats including MPEG
             uploaded_accompaniment = st.file_uploader(
-                "Accompaniment (_accompaniment.mp3)",
-                type=["mp3"],
+                "Accompaniment (_accompaniment.*)",
+                type=["mp3", "mpeg", "m4a", "wav", "mp4"],
                 key="acc_upload"
             )
         with col3:
             uploaded_lyrics_image = st.file_uploader(
                 "Lyrics Image (_lyrics_bg.jpg / .png)",
-                type=["jpg", "jpeg", "png"],
+                type=["jpg", "jpeg", "png", "webp", "bmp"],
                 key="lyrics_upload"
             )
 
@@ -927,14 +948,17 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 song_name = song_name_input.strip()
 
-                original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
-                acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
+                # Get file extensions
+                original_ext = os.path.splitext(uploaded_original.name)[1]
+                acc_ext = os.path.splitext(uploaded_accompaniment.name)[1]
                 lyrics_ext = os.path.splitext(uploaded_lyrics_image.name)[1]
-                lyrics_path = os.path.join(
-                    lyrics_dir,
-                    f"{song_name}_lyrics_bg{lyrics_ext}"
-                )
 
+                # Construct file paths
+                original_path = os.path.join(songs_dir, f"{song_name}_original{original_ext}")
+                acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment{acc_ext}")
+                lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{lyrics_ext}")
+
+                # Save files
                 with open(original_path, "wb") as f:
                     f.write(uploaded_original.getbuffer())
                 with open(acc_path, "wb") as f:
@@ -942,10 +966,14 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 with open(lyrics_path, "wb") as f:
                     f.write(uploaded_lyrics_image.getbuffer())
 
+                # Save metadata
                 metadata = get_metadata_cached()
                 metadata[song_name] = {
                     "uploaded_by": st.session_state.user,
-                    "timestamp": str(time.time())
+                    "timestamp": str(time.time()),
+                    "original_format": original_ext,
+                    "accompaniment_format": acc_ext,
+                    "lyrics_format": lyrics_ext
                 }
                 save_metadata(metadata)
 
@@ -1346,11 +1374,24 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         st.error("❌ Access denied!")
         st.stop()
 
-    original_path = os.path.join(songs_dir, f"{selected_song}_original.mp3")
-    accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment.mp3")
+    # Get file paths using the new function that supports multiple formats
+    original_path = get_song_file_path(selected_song, "original")
+    accompaniment_path = get_song_file_path(selected_song, "accompaniment")
+
+    if not original_path or not accompaniment_path:
+        st.error(f"❌ Song files not found for: {selected_song}")
+        if st.session_state.role in ["admin", "user"]:
+            if st.button("Go Back"):
+                if st.session_state.role == "admin":
+                    st.session_state.page = "Admin Dashboard"
+                elif st.session_state.role == "user":
+                    st.session_state.page = "User Dashboard"
+                save_session_to_db()
+                st.rerun()
+        st.stop()
 
     lyrics_path = ""
-    for ext in [".jpg", ".jpeg", ".png"]:
+    for ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]:
         p = os.path.join(lyrics_dir, f"{selected_song}_lyrics_bg{ext}")
         if os.path.exists(p):
             lyrics_path = p
@@ -1360,13 +1401,29 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH MOBILE-FRIENDLY 9:16 DOWNLOAD AND CLEAR LOGO
+    # Get file extension for MIME type
+    original_ext = os.path.splitext(original_path)[1].lower()
+    acc_ext = os.path.splitext(accompaniment_path)[1].lower()
+    
+    # Determine MIME type based on file extension
+    mime_types = {
+        '.mp3': 'audio/mp3',
+        '.mpeg': 'audio/mpeg',
+        '.m4a': 'audio/mp4',
+        '.wav': 'audio/wav',
+        '.mp4': 'audio/mp4'
+    }
+    
+    original_mime = mime_types.get(original_ext, 'audio/mp3')
+    acc_mime = mime_types.get(acc_ext, 'audio/mp3')
+
+    # ✅ UPDATED KARAOKE TEMPLATE WITH MULTI-FORMAT SUPPORT AND MOBILE-FRIENDLY 9:16 DOWNLOAD AND CLEAR LOGO
     karaoke_template = """
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>🎤 sing_along </title>
+  <title>🎤 sing_along</title>
 <style>
 * { 
     margin: 0; 
@@ -1492,8 +1549,8 @@ canvas {
     <img class="reel-bg" id="mainBg" src="data:image/jpeg;base64,%%LYRICS_B64%%">
     <img id="logoImg" src="data:image/png;base64,%%LOGO_B64%%">
     <div id="status">Ready 🎤</div>
-    <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%"></audio>
-    <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%"></audio>
+    <audio id="originalAudio" src="data:%%ORIGINAL_MIME%%;base64,%%ORIGINAL_B64%%"></audio>
+    <audio id="accompaniment" src="data:%%ACC_MIME%%;base64,%%ACCOMP_B64%%"></audio>
     <div class="controls">
       <button id="playBtn">▶ Play</button>
       <button id="recordBtn">🎙 Record</button>
@@ -1798,6 +1855,8 @@ accompanimentAudio.addEventListener('ended', () => {
     karaoke_html = karaoke_html.replace("%%ORIGINAL_B64%%", original_b64 or "")
     karaoke_html = karaoke_html.replace("%%ACCOMP_B64%%", accompaniment_b64 or "")
     karaoke_html = karaoke_html.replace("%%SONG_NAME%%", selected_song)
+    karaoke_html = karaoke_html.replace("%%ORIGINAL_MIME%%", original_mime)
+    karaoke_html = karaoke_html.replace("%%ACC_MIME%%", acc_mime)
 
     # ✅ BACK BUTTON LOGIC
     if st.session_state.role in ["admin", "user"]:
