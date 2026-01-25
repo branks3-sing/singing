@@ -1437,7 +1437,7 @@ body {
     z-index: 30; 
 }
 button { 
-    background: #00FFFF; 
+    background: #800000; 
     border: none; 
     color: white; 
     padding: 8px 20px; 
