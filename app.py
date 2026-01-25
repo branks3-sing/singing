@@ -1315,27 +1315,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
             margin: 5px !important;
         }
     }
-    
-    /* VOLUME CONTROL STYLES */
-    .volume-controls {
-        position: absolute;
-        bottom: 35%;
-        width: 100%;
-        text-align: center;
-        z-index: 40;
-        background: rgba(0, 0, 0, 0.7);
-        padding: 10px;
-        border-radius: 10px;
-        margin: 0 auto;
-        max-width: 300px;
-        left: 50%;
-        transform: translateX(-50%);
-    }
-    
-    .volume-slider {
-        width: 80%;
-        margin: 5px auto;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1383,7 +1362,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ ADVANCED NOISE-FREE VOICE RECORDING TEMPLATE
+    # ✅ UPDATED KARAOKE TEMPLATE WITH HIGH QUALITY RECORDING
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1507,50 +1486,6 @@ canvas {
     font-size: 14px; 
     z-index: 100; 
 }
-
-/* VOLUME CONTROL STYLES */
-.volume-controls {
-    position: absolute;
-    bottom: 35%;
-    width: 100%;
-    text-align: center;
-    z-index: 40;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 10px;
-    border-radius: 10px;
-    margin: 0 auto;
-    max-width: 300px;
-    left: 50%;
-    transform: translateX(-50%);
-}
-
-.volume-slider {
-    width: 80%;
-    margin: 5px auto;
-    -webkit-appearance: none;
-    appearance: none;
-    height: 8px;
-    background: #ff0066;
-    border-radius: 4px;
-    outline: none;
-}
-
-.volume-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: white;
-    cursor: pointer;
-}
-
-.volume-label {
-    color: white;
-    font-size: 12px;
-    margin-bottom: 5px;
-    display: block;
-}
 </style>
 </head>
 <body>
@@ -1561,19 +1496,10 @@ canvas {
     <div id="status">Ready 🎤</div>
     <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%"></audio>
     <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%"></audio>
-    
-    <div class="volume-controls" id="volumeControls" style="display: none;">
-        <span class="volume-label">🎤 Voice Volume:</span>
-        <input type="range" min="0" max="3" step="0.1" value="1.5" class="volume-slider" id="voiceVolume">
-        <span class="volume-label">🎵 Music Volume:</span>
-        <input type="range" min="0" max="2" step="0.1" value="0.7" class="volume-slider" id="musicVolume">
-    </div>
-    
     <div class="controls">
       <button id="playBtn">▶ Play</button>
       <button id="recordBtn">🎙 Record</button>
       <button id="stopBtn" style="display:none;">⏹ Stop</button>
-      <button id="volumeBtn" style="background: #667eea;">⚙️ Volume</button>
     </div>
 </div>
 
@@ -1602,23 +1528,15 @@ let playRecordingAudio = null;
 let lastRecordingURL = null;
 
 let audioContext, micSource, accSource;
-let micGain, accGain;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
-
-let currentVoiceVolume = 1.5;
-let currentMusicVolume = 0.7;
 
 /* ================== ELEMENTS ================== */
 const playBtn = document.getElementById("playBtn");
 const recordBtn = document.getElementById("recordBtn");
 const stopBtn = document.getElementById("stopBtn");
-const volumeBtn = document.getElementById("volumeBtn");
 const status = document.getElementById("status");
-const volumeControls = document.getElementById("volumeControls");
-const voiceVolumeSlider = document.getElementById("voiceVolume");
-const musicVolumeSlider = document.getElementById("musicVolume");
 
 const originalAudio = document.getElementById("originalAudio");
 const accompanimentAudio = document.getElementById("accompaniment");
@@ -1660,40 +1578,6 @@ document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) await ensureAudioContext();
 });
 
-/* ================== VOLUME CONTROL ================== */
-volumeBtn.onclick = () => {
-    if (volumeControls.style.display === "none") {
-        volumeControls.style.display = "block";
-        volumeBtn.innerText = "❌ Close";
-    } else {
-        volumeControls.style.display = "none";
-        volumeBtn.innerText = "⚙️ Volume";
-    }
-};
-
-voiceVolumeSlider.oninput = function() {
-    currentVoiceVolume = parseFloat(this.value);
-    if (micGain) {
-        micGain.gain.value = currentVoiceVolume;
-    }
-    status.innerText = `Voice Volume: ${this.value}`;
-    setTimeout(() => {
-        if (!isRecording) status.innerText = "Ready 🎤";
-    }, 1000);
-};
-
-musicVolumeSlider.oninput = function() {
-    currentMusicVolume = parseFloat(this.value);
-    if (accGain) {
-        accGain.gain.value = currentMusicVolume;
-    }
-    accompanimentAudio.volume = currentMusicVolume;
-    status.innerText = `Music Volume: ${this.value}`;
-    setTimeout(() => {
-        if (!isRecording) status.innerText = "Ready 🎤";
-    }, 1000);
-};
-
 /* ================== PLAY ORIGINAL (WITH AUTO-STOP) ================== */
 playBtn.onclick = async () => {
     await ensureAudioContext();
@@ -1709,6 +1593,7 @@ playBtn.onclick = async () => {
                 playBtn.innerText = "▶ Play";
                 status.innerText = "✅ Song completed";
                 
+                // Small delay before showing "Ready 🎤"
                 setTimeout(() => {
                     if (status.innerText === "✅ Song completed") {
                         status.innerText = "Ready 🎤";
@@ -1722,6 +1607,7 @@ playBtn.onclick = async () => {
         playBtn.innerText = "▶ Play";
         status.innerText = "⏹ Stopped";
         
+        // Clear the ended event
         originalAudio.onended = null;
     }
 };
@@ -1731,8 +1617,9 @@ function drawCanvas() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const canvasW = canvas.width;
-    const canvasH = canvas.height * 0.85;
+    // Mobile-friendly 9:16 aspect ratio (1080x1920)
+    const canvasW = canvas.width; // 1080
+    const canvasH = canvas.height * 0.85; // 1920 * 0.85 = ~1632
 
     const imgRatio = mainBg.naturalWidth / mainBg.naturalHeight;
     const canvasRatio = canvasW / canvasH;
@@ -1747,10 +1634,11 @@ function drawCanvas() {
     }
 
     const x = (canvasW - drawW) / 2;
-    const y = 0;
+    const y = 0; // TOP aligned
 
     ctx.drawImage(mainBg, x, y, drawW, drawH);
 
+    /* LOGO - CLEAR AND VISIBLE */
     ctx.globalAlpha = 1;
     ctx.drawImage(logoImg, 100, 100, 100, 100);
     ctx.globalAlpha = 1;
@@ -1758,7 +1646,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== ADVANCED NOISE-FREE RECORDING ================== */
+/* ================== RECORD (WITH HIGH QUALITY SETTINGS) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     isRecording = true;
@@ -1766,16 +1654,16 @@ recordBtn.onclick = async () => {
     await ensureAudioContext();
     recordedChunks = [];
 
-    /* 🔴 CRITICAL FIX: BACKGROUND NOISE ELIMINATION */
+    /* MIC - WITH OPTIMIZED SETTINGS FOR CLARITY */
     const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-            echoCancellation: true,     // ✅ ECHO CANCELLATION ENABLED
-            noiseSuppression: true,     // ✅ NOISE SUPPRESSION ENABLED
-            autoGainControl: false,     // ❌ AUTO GAIN DISABLED (prevents distortion)
-            channelCount: 1,            // Mono recording
-            sampleRate: 44100,          // Standard CD quality
-            sampleSize: 16,             // Better audio resolution
-            latency: 0
+            echoCancellation: false,  // Background noise filter తొలగించు
+            noiseSuppression: false,  // శబ్ద నిరోధకం ఆపు (voice natural ga untundi)
+            autoGainControl: false,   // ఆటోమేటిక్ వాల్యూమ్ కంట్రోల్ ఆపు (distortion తగ్గించు)
+            channelCount: 1,          // Mono recording (file size తగ్గించు)
+            sampleRate: 48000,        // High quality sample rate
+            sampleSize: 16,           // Better audio resolution
+            latency: 0                // Minimum latency
         }
     });
     
@@ -1791,38 +1679,21 @@ recordBtn.onclick = async () => {
 
     const destination = audioContext.createMediaStreamDestination();
     
-    // ✅ ADVANCED NOISE FILTERING
-    // 1. High-pass filter to remove low-frequency hum
-    const highPassFilter = audioContext.createBiquadFilter();
-    highPassFilter.type = "highpass";
-    highPassFilter.frequency.value = 80; // Remove hum below 80Hz
-    
-    // 2. Low-pass filter to remove high-frequency noise
-    const lowPassFilter = audioContext.createBiquadFilter();
-    lowPassFilter.type = "lowpass";
-    lowPassFilter.frequency.value = 8000; // Keep voice up to 8kHz
-    
-    // 3. Voice volume control
-    micGain = audioContext.createGain();
-    micGain.gain.value = currentVoiceVolume;
-    
-    // 4. Music volume control
-    accGain = audioContext.createGain();
-    accGain.gain.value = currentMusicVolume;
-    
-    // Connect filters in chain: mic → highpass → lowpass → gain → destination
-    micSource.connect(highPassFilter);
-    highPassFilter.connect(lowPassFilter);
-    lowPassFilter.connect(micGain);
+    // ✅ VOICE VOLUME ADJUSTMENT (Mic gain control)
+    const micGain = audioContext.createGain();
+    micGain.gain.value = 1.5; // Voice volume increase (1.0 = normal)
+    micSource.connect(micGain);
     micGain.connect(destination);
     
-    // Connect accompaniment with volume control
+    // ✅ ACCOMPANIMENT VOLUME ADJUSTMENT
+    const accGain = audioContext.createGain();
+    accGain.gain.value = 0.7; // Background music volume decrease
     accSource.connect(accGain);
     accGain.connect(destination);
 
     accSource.start();
 
-    // Set canvas
+    // Set canvas to 9:16 mobile aspect ratio
     canvas.width = 1080;
     canvas.height = 1920;
     drawCanvas();
@@ -1832,7 +1703,7 @@ recordBtn.onclick = async () => {
         ...destination.stream.getTracks()
     ]);
 
-    // High quality recording
+    // ✅ HIGH QUALITY RECORDER SETTINGS
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? 'video/webm;codecs=vp9,opus'
         : 'video/webm';
@@ -1840,7 +1711,7 @@ recordBtn.onclick = async () => {
     mediaRecorder = new MediaRecorder(stream, {
         mimeType: mimeType,
         videoBitsPerSecond: 2500000,
-        audioBitsPerSecond: 192000 // Higher quality audio
+        audioBitsPerSecond: 128000
     });
     
     mediaRecorder.ondataavailable = e => e.data.size && recordedChunks.push(e.data);
@@ -1857,9 +1728,9 @@ recordBtn.onclick = async () => {
         finalBg.src = mainBg.src;
         finalDiv.style.display = "flex";
 
-        // Download with song name
+        // ✅ DOWNLOAD WITH SONG NAME
         const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = songName + "_clean_voice_recording.webm";
+        const fileName = songName + "_recording.webm";
         downloadRecordingBtn.href = url;
         downloadRecordingBtn.download = fileName;
 
@@ -1886,19 +1757,15 @@ recordBtn.onclick = async () => {
 
     originalAudio.currentTime = 0;
     accompanimentAudio.currentTime = 0;
-    accompanimentAudio.volume = currentMusicVolume;
-    
     await safePlay(originalAudio);
     await safePlay(accompanimentAudio);
 
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
-    volumeBtn.style.display = "none";
-    volumeControls.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording (Clean Voice)...";
+    status.innerText = "🎙 Recording (High Quality)...";
     
-    // Auto-stop when song ends
+    // ✅ AUTOMATIC STOP WHEN SONG ENDS
     originalAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
@@ -1934,11 +1801,9 @@ function stopRecording() {
     accompanimentAudio.currentTime = 0;
 
     stopBtn.style.display = "none";
-    playBtn.style.display = "inline-block";
-    recordBtn.style.display = "inline-block";
-    volumeBtn.style.display = "inline-block";
-    status.innerText = "⏹ Processing Clean Recording...";
+    status.innerText = "⏹ Processing...";
     
+    // Clear the ended events
     originalAudio.onended = null;
     accompanimentAudio.onended = null;
 }
@@ -1966,20 +1831,22 @@ newRecordingBtn.onclick = () => {
 
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
-    volumeBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
     playBtn.innerText = "▶ Play";
     status.innerText = "Ready 🎤";
     
+    // Clear all event listeners
     originalAudio.onended = null;
     accompanimentAudio.onended = null;
 };
 
 /* ================== INITIALIZE ================== */
+// Set up initial event listeners for song completion
 originalAudio.onloadedmetadata = function() {
     console.log("Song duration:", originalAudio.duration, "seconds");
 };
 
+// Reset button when audio ends naturally
 originalAudio.addEventListener('ended', function() {
     if (playBtn.innerText === "⏹ Stop") {
         playBtn.innerText = "▶ Play";
@@ -1993,6 +1860,7 @@ originalAudio.addEventListener('ended', function() {
     }
 });
 
+// Also reset when accompaniment ends (for recording)
 accompanimentAudio.addEventListener('ended', function() {
     if (playBtn.innerText === "⏹ Stop" && !isRecording) {
         playBtn.innerText = "▶ Play";
@@ -2005,9 +1873,6 @@ accompanimentAudio.addEventListener('ended', function() {
         }, 1500);
     }
 });
-
-// Set initial music volume
-accompanimentAudio.volume = currentMusicVolume;
 </script>
 </body>
 </html>
