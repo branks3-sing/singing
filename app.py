@@ -1,3 +1,4 @@
+nakku ee below code lo song play button click cheste play ayyi stop button vastundhi kadha naku adhi song anedhi complete ga paly ayyina taruvatha naku adi automatic ga stop ayyi play ani ravali like sync like record lo ela ayyite work avvuthundho ala kavali give me full updated working code based on my code remaing working em distrub cheyakunda send chey
 import streamlit as st
 import os
 import base64
@@ -32,6 +33,7 @@ def ensure_logo_exists():
                 print(f"✅ Logo downloaded from GitHub")
             else:
                 # Create a simple placeholder logo
+                from PIL import ImageDraw
                 img = Image.new('RGB', (512, 512), color='#1E3A8A')
                 d = ImageDraw.Draw(img)
                 d.text((200, 220), "🎤", fill='white', font_size=100)
@@ -1360,7 +1362,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH MOBILE-FRIENDLY 9:16 DOWNLOAD AND CLEAR LOGO
+    # ✅ UPDATED KARAOKE TEMPLATE WITH AUTO-STOP FUNCTIONALITY
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1466,8 +1468,8 @@ button:active {
     width: 40px;
     height: 40px;
     z-index: 50; 
-    opacity: 1; /* CHANGED FROM 0.6 TO 1 FOR CLEAR LOGO */
-    filter: brightness(1.2); /* MAKE LOGO CLEARER */
+    opacity: 1;
+    filter: brightness(1.2);
 }
 canvas { 
     display: none; 
@@ -1516,7 +1518,7 @@ canvas {
   </div>
 </div>
 
-<canvas id="recordingCanvas" width="1080" height="1920"></canvas> <!-- CHANGED TO 9:16 ASPECT RATIO -->
+<canvas id="recordingCanvas" width="1080" height="1920"></canvas>
 
 <script>
 /* ================== GLOBAL STATE ================== */
@@ -1576,7 +1578,7 @@ document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) await ensureAudioContext();
 });
 
-/* ================== PLAY ORIGINAL ================== */
+/* ================== PLAY ORIGINAL (WITH AUTO-STOP) ================== */
 playBtn.onclick = async () => {
     await ensureAudioContext();
     if (originalAudio.paused) {
@@ -1584,10 +1586,29 @@ playBtn.onclick = async () => {
         await safePlay(originalAudio);
         playBtn.innerText = "⏹ Stop";
         status.innerText = "🎵 Playing song...";
+        
+        // Set auto-stop when song ends
+        originalAudio.onended = () => {
+            if (playBtn.innerText === "⏹ Stop") {
+                playBtn.innerText = "▶ Play";
+                status.innerText = "✅ Song completed";
+                
+                // Small delay before showing "Ready 🎤"
+                setTimeout(() => {
+                    if (status.innerText === "✅ Song completed") {
+                        status.innerText = "Ready 🎤";
+                    }
+                }, 1500);
+            }
+        };
     } else {
         originalAudio.pause();
+        originalAudio.currentTime = 0;
         playBtn.innerText = "▶ Play";
         status.innerText = "⏹ Stopped";
+        
+        // Clear the ended event
+        originalAudio.onended = null;
     }
 };
 
@@ -1618,14 +1639,14 @@ function drawCanvas() {
     ctx.drawImage(mainBg, x, y, drawW, drawH);
 
     /* LOGO - CLEAR AND VISIBLE */
-    ctx.globalAlpha = 1; // FULL VISIBILITY
+    ctx.globalAlpha = 1;
     ctx.drawImage(logoImg, 100, 100, 100, 100);
     ctx.globalAlpha = 1;
 
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD ================== */
+/* ================== RECORD (WITH AUTO-STOP) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     isRecording = true;
@@ -1667,7 +1688,7 @@ recordBtn.onclick = async () => {
     mediaRecorder.onstop = () => {
         cancelAnimationFrame(canvasRafId);
 
-        const blob = new Blob(recordedChunks, { type: "video/mp4" }); // CHANGED TO MP4
+        const blob = new Blob(recordedChunks, { type: "video/mp4" });
         const url = URL.createObjectURL(blob);
 
         if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
@@ -1688,9 +1709,15 @@ recordBtn.onclick = async () => {
                 playRecordingAudio.play();
                 playRecordingBtn.innerText = "⏹ Stop";
                 isPlayingRecording = true;
-                playRecordingAudio.onended = resetPlayBtn;
+                playRecordingAudio.onended = () => {
+                    playRecordingBtn.innerText = "▶ Play";
+                    isPlayingRecording = false;
+                };
             } else {
-                resetPlayBtn();
+                playRecordingAudio.pause();
+                playRecordingAudio.currentTime = 0;
+                playRecordingBtn.innerText = "▶ Play";
+                isPlayingRecording = false;
             }
         };
     };
@@ -1707,17 +1734,30 @@ recordBtn.onclick = async () => {
     stopBtn.style.display = "inline-block";
     status.innerText = "🎙 Recording...";
     
-    // ✅ AUTOMATIC STOP: Set timeout to stop recording when song ends
-    const songDuration = originalAudio.duration * 1000; // Convert to milliseconds
-    setTimeout(() => {
+    // ✅ AUTOMATIC STOP WHEN SONG ENDS
+    originalAudio.onended = () => {
         if (isRecording) {
-            stopBtn.click(); // Automatically click stop button
+            setTimeout(() => {
+                if (isRecording) {
+                    stopRecording();
+                }
+            }, 500);
         }
-    }, songDuration + 500); // Add 500ms buffer
+    };
+    
+    accompanimentAudio.onended = () => {
+        if (isRecording) {
+            setTimeout(() => {
+                if (isRecording) {
+                    stopRecording();
+                }
+            }, 500);
+        }
+    };
 };
 
-/* ================== STOP ================== */
-stopBtn.onclick = () => {
+/* ================== STOP RECORDING FUNCTION ================== */
+function stopRecording() {
     if (!isRecording) return;
     isRecording = false;
 
@@ -1726,20 +1766,19 @@ stopBtn.onclick = () => {
 
     originalAudio.pause();
     accompanimentAudio.pause();
+    originalAudio.currentTime = 0;
+    accompanimentAudio.currentTime = 0;
 
     stopBtn.style.display = "none";
     status.innerText = "⏹ Processing...";
-};
-
-/* ================== HELPERS ================== */
-function resetPlayBtn() {
-    if (playRecordingAudio) {
-        playRecordingAudio.pause();
-        playRecordingAudio.currentTime = 0;
-    }
-    playRecordingBtn.innerText = "▶ Play";
-    isPlayingRecording = false;
+    
+    // Clear the ended events
+    originalAudio.onended = null;
+    accompanimentAudio.onended = null;
 }
+
+/* ================== STOP BUTTON CLICK ================== */
+stopBtn.onclick = stopRecording;
 
 /* ================== NEW RECORDING ================== */
 newRecordingBtn.onclick = () => {
@@ -1764,28 +1803,43 @@ newRecordingBtn.onclick = () => {
     stopBtn.style.display = "none";
     playBtn.innerText = "▶ Play";
     status.innerText = "Ready 🎤";
+    
+    // Clear all event listeners
+    originalAudio.onended = null;
+    accompanimentAudio.onended = null;
 };
 
-/* ================== SONG END DETECTION ================== */
-originalAudio.addEventListener('ended', () => {
-    if (isRecording) {
-        // If recording is still active when song ends, stop it
+/* ================== INITIALIZE ================== */
+// Set up initial event listeners for song completion
+originalAudio.onloadedmetadata = function() {
+    console.log("Song duration:", originalAudio.duration, "seconds");
+};
+
+// Reset button when audio ends naturally
+originalAudio.addEventListener('ended', function() {
+    if (playBtn.innerText === "⏹ Stop") {
+        playBtn.innerText = "▶ Play";
+        status.innerText = "✅ Song completed";
+        
         setTimeout(() => {
-            if (isRecording) {
-                stopBtn.click();
+            if (status.innerText === "✅ Song completed") {
+                status.innerText = "Ready 🎤";
             }
-        }, 100);
+        }, 1500);
     }
 });
 
-accompanimentAudio.addEventListener('ended', () => {
-    if (isRecording) {
-        // If recording is still active when accompaniment ends, stop it
+// Also reset when accompaniment ends (for recording)
+accompanimentAudio.addEventListener('ended', function() {
+    if (playBtn.innerText === "⏹ Stop" && !isRecording) {
+        playBtn.innerText = "▶ Play";
+        status.innerText = "✅ Song completed";
+        
         setTimeout(() => {
-            if (isRecording) {
-                stopBtn.click();
+            if (status.innerText === "✅ Song completed") {
+                status.innerText = "Ready 🎤";
             }
-        }, 100);
+        }, 1500);
     }
 });
 </script>
