@@ -771,112 +771,133 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
     # Auto-save session
     save_session_to_db()
     
-    # Add mobile-responsive styles for admin dashboard
+    # FIXED: ADMIN DASHBOARD STYLES WITH NO SCROLLING
     st.markdown("""
     <style>
+    /* FIX SCROLLING ISSUE - NO SCROLLING IN ADMIN DASHBOARD */
+    .stApp {
+        overflow: hidden !important;
+    }
+    
+    /* MAIN CONTENT CONTAINER - FIXED HEIGHT */
+    .main .block-container {
+        max-height: calc(100vh - 100px) !important;
+        overflow-y: auto !important;
+        padding-bottom: 20px !important;
+    }
+    
+    /* SONGS LIST CONTAINER - FIXED HEIGHT WITH SCROLLING */
+    .songs-container {
+        max-height: 60vh !important;
+        overflow-y: auto !important;
+        border-radius: 10px !important;
+        padding: 10px !important;
+        background: rgba(255, 255, 255, 0.05) !important;
+    }
+    
+    /* INDIVIDUAL SONG ITEM */
+    .song-item {
+        padding: 10px 15px !important;
+        margin: 5px 0 !important;
+        border-radius: 8px !important;
+        background: rgba(255, 255, 255, 0.1) !important;
+        transition: all 0.3s ease !important;
+        border-left: 4px solid transparent !important;
+    }
+    
+    .song-item:hover {
+        background: rgba(255, 255, 255, 0.15) !important;
+        border-left: 4px solid #ff0066 !important;
+        transform: translateX(5px) !important;
+    }
+    
+    /* BUTTON STYLING */
+    .stButton > button {
+        width: 100% !important;
+        text-align: left !important;
+        padding: 10px 15px !important;
+        border-radius: 8px !important;
+        margin: 3px 0 !important;
+        background: rgba(255, 255, 255, 0.1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        color: white !important;
+    }
+    
+    .stButton > button:hover {
+        background: rgba(255, 255, 255, 0.2) !important;
+        border-color: rgba(255, 255, 255, 0.3) !important;
+    }
+    
+    /* ACTION BUTTONS (SHARE, DELETE) */
+    .action-btn {
+        background: transparent !important;
+        border: none !important;
+        font-size: 18px !important;
+        padding: 5px 10px !important;
+        margin: 0 5px !important;
+    }
+    
+    /* SEARCH BAR */
+    .stTextInput > div > div > input {
+        background: rgba(255, 255, 255, 0.1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        color: white !important;
+        border-radius: 8px !important;
+    }
+    
     /* ADMIN DASHBOARD MOBILE STYLES */
     @media (max-width: 768px) {
-        /* Reduce title size */
+        .main .block-container {
+            max-height: calc(100vh - 80px) !important;
+            padding: 10px !important;
+        }
+        
+        .songs-container {
+            max-height: 50vh !important;
+        }
+        
+        .song-item {
+            padding: 8px 12px !important;
+            font-size: 14px !important;
+        }
+        
         h1 {
             font-size: 1.5rem !important;
         }
         
-        /* Reduce subheader size */
         h3 {
             font-size: 1.2rem !important;
         }
         
-        /* Reduce button text size */
         .stButton > button {
-            font-size: 14px !important;
             padding: 8px 12px !important;
-        }
-        
-        /* Reduce radio button text */
-        .stRadio > div[role="radiogroup"] > label {
             font-size: 14px !important;
         }
-        
-        /* Reduce sidebar text */
-        [data-testid="stSidebar"] * {
-            font-size: 14px !important;
-        }
-        
-        /* Adjust song list items */
-        .song-name {
-            font-size: 14px !important;
-        }
-        
-        /* Adjust columns for mobile */
-        .stColumn {
-            padding: 2px !important;
-        }
-        
-        /* Search bar mobile optimization */
-        .stTextInput > div > div > input {
-            font-size: 14px !important;
-            padding: 8px !important;
-        }
     }
     
-    /* DELETE BUTTON STYLING - NO BACKGROUND, NO BORDER, NO PADDING */
-    .delete-button {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        min-width: auto !important;
-        width: auto !important;
-        color: #ff4444 !important;
-        font-size: 20px !important;
-        box-shadow: none !important;
+    /* FIX SIDEBAR SCROLLING */
+    [data-testid="stSidebar"] {
+        max-height: 100vh !important;
+        overflow-y: auto !important;
     }
     
-    .delete-button:hover {
-        background: transparent !important;
-        color: #ff0000 !important;
-        transform: scale(1.1);
+    /* HIDE DEFAULT SCROLLBARS */
+    ::-webkit-scrollbar {
+        width: 6px !important;
     }
     
-    /* SONG LIST ITEMS - CLEAN LAYOUT */
-    .song-item-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 4px !important;
-        padding: 0 !important;
-        background: transparent !important;
+    ::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1) !important;
+        border-radius: 10px !important;
     }
     
-    /* PLAY BUTTON STYLING */
-    .play-button {
-        background: transparent !important;
-        border: none !important;
-        color: #4CAF50 !important;
-        text-align: left !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        width: 100% !important;
+    ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3) !important;
+        border-radius: 10px !important;
     }
     
-    .play-button:hover {
-        background: rgba(76, 175, 80, 0.1) !important;
-    }
-    
-    /* SHARE BUTTON STYLING */
-    .share-link-button {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        min-width: auto !important;
-        width: auto !important;
-        color: #667eea !important;
-        font-size: 20px !important;
-    }
-    
-    .share-link-button:hover {
-        color: #764ba2 !important;
-        transform: scale(1.1);
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.4) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -985,43 +1006,47 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs uploaded yet.")
         else:
-            # Clean layout with minimal styling
-            for idx, s in enumerate(uploaded_songs):
-                # Create columns for each song
-                col1, col2, col3 = st.columns([3, 1, 1])
-                
-                with col1:
-                    # Clickable song name - simple text
-                    if st.button(
-                        f"🎶 {s}",
-                        key=f"song_name_{s}_{idx}",
-                        help="Click to play song",
-                        use_container_width=True,
-                        type="secondary"
-                    ):
-                        open_song_player(s)
-                
-                with col2:
-                    # Share link icon - using button with emoji
-                    safe_s = quote(s)
-                    share_url = f"{APP_URL}?song={safe_s}"
-                    if st.button(
-                        "🔗",
-                        key=f"share_icon_{s}_{idx}",
-                        help="Share link"
-                    ):
-                        st.markdown(f"Share URL: {share_url}")
-                        st.info("Link copied to clipboard!")
-                
-                with col3:
-                    # Delete button - simple trash icon with minimal styling
-                    if st.button(
-                        "🗑️",
-                        key=f"delete_{s}_{idx}",
-                        help="Delete song"
-                    ):
-                        st.session_state.confirm_delete = s
-                        st.rerun()
+            # Create a container with fixed height and scrolling
+            songs_container = st.container()
+            
+            with songs_container:
+                # Use columns for better layout
+                for idx, s in enumerate(uploaded_songs):
+                    # Create columns for each song
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    
+                    with col1:
+                        # Clickable song name - simple text
+                        if st.button(
+                            f"🎶 {s}",
+                            key=f"song_name_{s}_{idx}",
+                            help="Click to play song",
+                            use_container_width=True,
+                            type="secondary"
+                        ):
+                            open_song_player(s)
+                    
+                    with col2:
+                        # Share link icon - using button with emoji
+                        safe_s = quote(s)
+                        share_url = f"{APP_URL}?song={safe_s}"
+                        if st.button(
+                            "🔗",
+                            key=f"share_icon_{s}_{idx}",
+                            help="Share link"
+                        ):
+                            st.markdown(f"Share URL: {share_url}")
+                            st.info("Link copied to clipboard!")
+                    
+                    with col3:
+                        # Delete button - simple trash icon with minimal styling
+                        if st.button(
+                            "🗑️",
+                            key=f"delete_{s}_{idx}",
+                            help="Delete song"
+                        ):
+                            st.session_state.confirm_delete = s
+                            st.rerun()
             
             # Confirmation dialog for deletion
             if st.session_state.confirm_delete:
@@ -1084,59 +1109,63 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs available to share.")
         else:
-            # Simple display
-            for song in all_songs:
-                # Create columns for each song
-                col1, col2 = st.columns([3, 1])
-                
-                with col1:
-                    safe_song = quote(song)
-                    is_shared = song in shared_links_data
-                    status = "✅ SHARED" if is_shared else "❌ NOT SHARED"
-                    st.write(f"**{song}** - {status}")
-                
-                with col2:
-                    # Create buttons
-                    col_toggle, col_action = st.columns(2)
+            # Create a fixed height container
+            share_container = st.container()
+            
+            with share_container:
+                # Simple display
+                for song in all_songs:
+                    # Create columns for each song
+                    col1, col2 = st.columns([3, 1])
                     
-                    with col_toggle:
-                        if is_shared:
-                            if st.button("🚫", key=f"unshare_{song}", help="Unshare"):
-                                delete_shared_link(song)
-                                get_shared_links_cached.clear()
-                                st.success(f"✅ {song} unshared!")
-                                time.sleep(0.5)
-                                st.rerun()
-                        else:
-                            if st.button("🔗", key=f"share_{song}", help="Share"):
-                                save_shared_link(
-                                    song,
-                                    {"shared_by": st.session_state.user, "active": True}
-                                )
-                                get_shared_links_cached.clear()
+                    with col1:
+                        safe_song = quote(song)
+                        is_shared = song in shared_links_data
+                        status = "✅ SHARED" if is_shared else "❌ NOT SHARED"
+                        st.write(f"**{song}** - {status}")
+                    
+                    with col2:
+                        # Create buttons
+                        col_toggle, col_action = st.columns(2)
+                        
+                        with col_toggle:
+                            if is_shared:
+                                if st.button("🚫", key=f"unshare_{song}", help="Unshare"):
+                                    delete_shared_link(song)
+                                    get_shared_links_cached.clear()
+                                    st.success(f"✅ {song} unshared!")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            else:
+                                if st.button("🔗", key=f"share_{song}", help="Share"):
+                                    save_shared_link(
+                                        song,
+                                        {"shared_by": st.session_state.user, "active": True}
+                                    )
+                                    get_shared_links_cached.clear()
+                                    share_url = f"{APP_URL}?song={safe_song}"
+                                    st.success(f"✅ {song} shared!\n{share_url}")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                        
+                        with col_action:
+                            if is_shared:
                                 share_url = f"{APP_URL}?song={safe_song}"
-                                st.success(f"✅ {song} shared!\n{share_url}")
-                                time.sleep(0.5)
-                                st.rerun()
-                    
-                    with col_action:
-                        if is_shared:
-                            share_url = f"{APP_URL}?song={safe_song}"
-                            st.markdown(f"""
-                            <a href="{share_url}" target="_blank" style="
-                                display: inline-block;
-                                width: 40px;
-                                height: 32px;
-                                background: transparent;
-                                color: #667eea;
-                                text-align: center;
-                                line-height: 32px;
-                                border-radius: 4px;
-                                text-decoration: none;
-                                font-size: 16px;
-                                float: right;
-                            " title="Open Link">🔗</a>
-                            """, unsafe_allow_html=True)
+                                st.markdown(f"""
+                                <a href="{share_url}" target="_blank" style="
+                                    display: inline-block;
+                                    width: 40px;
+                                    height: 32px;
+                                    background: transparent;
+                                    color: #667eea;
+                                    text-align: center;
+                                    line-height: 32px;
+                                    border-radius: 4px;
+                                    text-decoration: none;
+                                    font-size: 16px;
+                                    float: right;
+                                " title="Open Link">🔗</a>
+                                """, unsafe_allow_html=True)
 
     # ================= LOGOUT =================
     if st.sidebar.button("Logout", key="admin_logout"):
@@ -1151,35 +1180,80 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
     # Auto-save session
     save_session_to_db()
     
-    # Add mobile-responsive styles for user dashboard
+    # FIXED: USER DASHBOARD STYLES WITH NO SCROLLING
     st.markdown("""
     <style>
+    /* FIX SCROLLING ISSUE - NO SCROLLING IN USER DASHBOARD */
+    .stApp {
+        overflow: hidden !important;
+    }
+    
+    /* MAIN CONTENT CONTAINER - FIXED HEIGHT */
+    .main .block-container {
+        max-height: calc(100vh - 100px) !important;
+        overflow-y: auto !important;
+        padding-bottom: 20px !important;
+    }
+    
+    /* USER SONGS CONTAINER - FIXED HEIGHT WITH SCROLLING */
+    .user-songs-container {
+        max-height: 65vh !important;
+        overflow-y: auto !important;
+        border-radius: 10px !important;
+        padding: 10px !important;
+        background: rgba(255, 255, 255, 0.05) !important;
+        margin-top: 15px !important;
+    }
+    
+    /* USER SONG BUTTONS */
+    .user-song-btn {
+        width: 100% !important;
+        text-align: left !important;
+        padding: 12px 15px !important;
+        margin: 5px 0 !important;
+        border-radius: 8px !important;
+        background: rgba(76, 175, 80, 0.15) !important;
+        border: 1px solid rgba(76, 175, 80, 0.3) !important;
+        color: white !important;
+        font-size: 16px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .user-song-btn:hover {
+        background: rgba(76, 175, 80, 0.25) !important;
+        border-color: rgba(76, 175, 80, 0.5) !important;
+        transform: translateX(5px) !important;
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2) !important;
+    }
+    
     /* USER DASHBOARD MOBILE STYLES */
     @media (max-width: 768px) {
-        /* Reduce title size */
+        .main .block-container {
+            max-height: calc(100vh - 80px) !important;
+            padding: 10px !important;
+        }
+        
+        .user-songs-container {
+            max-height: 55vh !important;
+            padding: 8px !important;
+        }
+        
+        .user-song-btn {
+            padding: 10px 12px !important;
+            font-size: 14px !important;
+            margin: 4px 0 !important;
+        }
+        
         h3 {
             font-size: 1.2rem !important;
         }
         
-        /* Reduce sidebar header */
         [data-testid="stSidebar"] h2 {
             font-size: 1.3rem !important;
         }
         
-        /* Reduce sidebar subheader */
         [data-testid="stSidebar"] h3 {
             font-size: 1.1rem !important;
-        }
-        
-        /* Reduce button text size */
-        .stButton > button {
-            font-size: 14px !important;
-            padding: 8px 12px !important;
-        }
-        
-        /* Reduce user song name text */
-        .user-song-name {
-            font-size: 14px !important;
         }
         
         /* Search bar mobile optimization */
@@ -1189,23 +1263,29 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
         }
     }
     
-    /* CLICKABLE SONG NAMES - NO BACKGROUND, NO BORDERS */
-    .clickable-song {
-        cursor: pointer;
-        padding: 12px 8px;
-        transition: all 0.2s ease;
-        border-radius: 0px;
-        background: transparent !important;
-        border: none !important;
-        text-align: left;
-        width: 100%;
-        display: block;
-        margin: 0 !important;
+    /* FIX SIDEBAR SCROLLING */
+    [data-testid="stSidebar"] {
+        max-height: 100vh !important;
+        overflow-y: auto !important;
     }
     
-    .clickable-song:hover {
-        background: rgba(255, 0, 102, 0.1) !important;
-        transform: translateX(5px);
+    /* HIDE DEFAULT SCROLLBARS */
+    ::-webkit-scrollbar {
+        width: 6px !important;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1) !important;
+        border-radius: 10px !important;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3) !important;
+        border-radius: 10px !important;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.4) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1231,7 +1311,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             save_session_to_db()
             st.rerun()
 
-    # 🔹 MAIN CONTENT - UPDATED FOR MOBILE RESPONSIVE DESIGN
+    # 🔹 MAIN CONTENT - FIXED HEIGHT CONTAINER
     st.subheader("🎵 Available Songs (Only Shared Songs)")
     
     # SEARCH BAR WITH PLACEHOLDER
@@ -1261,17 +1341,21 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             st.warning("❌ No shared songs available. Contact admin to share songs.")
             st.info("👑 Only admin-shared songs appear here for users.")
     else:
-        # Simple list display
-        for idx, song in enumerate(uploaded_songs):
-            # Clickable song name
-            if st.button(
-                f"✅ *{song}*",
-                key=f"user_song_{song}_{idx}",
-                help="Click to play song",
-                use_container_width=True,
-                type="secondary"
-            ):
-                open_song_player(song)
+        # Create a fixed height container for songs
+        songs_container = st.container()
+        
+        with songs_container:
+            # Simple list display
+            for idx, song in enumerate(uploaded_songs):
+                # Clickable song name with custom styling
+                if st.button(
+                    f"🎵 {song}",
+                    key=f"user_song_{song}_{idx}",
+                    help="Click to play song",
+                    use_container_width=True,
+                    type="secondary"
+                ):
+                    open_song_player(song)
 
 # =============== SONG PLAYER ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
