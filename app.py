@@ -1362,7 +1362,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH AUTO-STOP FUNCTIONALITY
+    # ✅ UPDATED KARAOKE TEMPLATE WITH HIGH QUALITY RECORDING
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1646,7 +1646,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD (WITH AUTO-STOP) ================== */
+/* ================== RECORD (WITH HIGH QUALITY SETTINGS) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     isRecording = true;
@@ -1654,8 +1654,19 @@ recordBtn.onclick = async () => {
     await ensureAudioContext();
     recordedChunks = [];
 
-    /* MIC */
-    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    /* MIC - WITH OPTIMIZED SETTINGS FOR CLARITY */
+    const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: false,  // Background noise filter తొలగించు
+            noiseSuppression: false,  // శబ్ద నిరోధకం ఆపు (voice natural ga untundi)
+            autoGainControl: false,   // ఆటోమేటిక్ వాల్యూమ్ కంట్రోల్ ఆపు (distortion తగ్గించు)
+            channelCount: 1,          // Mono recording (file size తగ్గించు)
+            sampleRate: 48000,        // High quality sample rate
+            sampleSize: 16,           // Better audio resolution
+            latency: 0                // Minimum latency
+        }
+    });
+    
     micSource = audioContext.createMediaStreamSource(micStream);
 
     /* ACCOMPANIMENT */
@@ -1667,8 +1678,18 @@ recordBtn.onclick = async () => {
     accSource.buffer = accDecoded;
 
     const destination = audioContext.createMediaStreamDestination();
-    micSource.connect(destination);
-    accSource.connect(destination);
+    
+    // ✅ VOICE VOLUME ADJUSTMENT (Mic gain control)
+    const micGain = audioContext.createGain();
+    micGain.gain.value = 1.5; // Voice volume increase (1.0 = normal)
+    micSource.connect(micGain);
+    micGain.connect(destination);
+    
+    // ✅ ACCOMPANIMENT VOLUME ADJUSTMENT
+    const accGain = audioContext.createGain();
+    accGain.gain.value = 0.7; // Background music volume decrease
+    accSource.connect(accGain);
+    accGain.connect(destination);
 
     accSource.start();
 
@@ -1682,13 +1703,23 @@ recordBtn.onclick = async () => {
         ...destination.stream.getTracks()
     ]);
 
-    mediaRecorder = new MediaRecorder(stream);
+    // ✅ HIGH QUALITY RECORDER SETTINGS
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
+        ? 'video/webm;codecs=vp9,opus'
+        : 'video/webm';
+    
+    mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+        videoBitsPerSecond: 2500000,
+        audioBitsPerSecond: 128000
+    });
+    
     mediaRecorder.ondataavailable = e => e.data.size && recordedChunks.push(e.data);
 
     mediaRecorder.onstop = () => {
         cancelAnimationFrame(canvasRafId);
 
-        const blob = new Blob(recordedChunks, { type: "video/mp4" });
+        const blob = new Blob(recordedChunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
 
         if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
@@ -1697,9 +1728,9 @@ recordBtn.onclick = async () => {
         finalBg.src = mainBg.src;
         finalDiv.style.display = "flex";
 
-        // ✅ DOWNLOAD WITH SONG NAME + .mp4
+        // ✅ DOWNLOAD WITH SONG NAME
         const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = songName + ".mp4";
+        const fileName = songName + "_recording.webm";
         downloadRecordingBtn.href = url;
         downloadRecordingBtn.download = fileName;
 
@@ -1732,7 +1763,7 @@ recordBtn.onclick = async () => {
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording...";
+    status.innerText = "🎙 Recording (High Quality)...";
     
     // ✅ AUTOMATIC STOP WHEN SONG ENDS
     originalAudio.onended = () => {
@@ -1874,7 +1905,6 @@ accompanimentAudio.addEventListener('ended', function() {
         st.empty()
 
     html(karaoke_html, height=800, width=1920, scrolling=False)
-
 # =============== FALLBACK ===============
 else:
     if "song" in st.query_params:
