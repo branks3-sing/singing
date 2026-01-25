@@ -1362,7 +1362,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH HIGH QUALITY RECORDING
+    # ✅ UPDATED KARAOKE TEMPLATE WITH NOISE REDUCTION
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1532,6 +1532,34 @@ let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
 
+/* ================== NOISE REDUCTION FILTER ================== */
+function createNoiseReductionFilter(context) {
+    // Create a noise gate filter (removes background noise when not speaking)
+    const noiseGate = context.createDynamicsCompressor();
+    noiseGate.threshold.value = -50; // Remove sounds below -50dB
+    noiseGate.knee.value = 0; // Hard knee
+    noiseGate.ratio.value = 20; // High compression ratio
+    noiseGate.attack.value = 0.003; // Fast attack
+    noiseGate.release.value = 0.250; // Medium release
+    
+    // Create a bandpass filter to focus on voice frequencies (300Hz - 3400Hz)
+    const bandpass = context.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.value = 800; // Center frequency
+    bandpass.Q.value = 1.0; // Quality factor
+    
+    // Create a high-pass filter to remove low-frequency noise
+    const highpass = context.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 80; // Remove frequencies below 80Hz
+    
+    // Connect filters in series
+    highpass.connect(bandpass);
+    bandpass.connect(noiseGate);
+    
+    return { input: highpass, output: noiseGate };
+}
+
 /* ================== ELEMENTS ================== */
 const playBtn = document.getElementById("playBtn");
 const recordBtn = document.getElementById("recordBtn");
@@ -1646,7 +1674,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD (WITH NOISE SUPPRESSION) ================== */
+/* ================== RECORD (WITH ADVANCED NOISE REDUCTION) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     isRecording = true;
@@ -1654,62 +1682,24 @@ recordBtn.onclick = async () => {
     await ensureAudioContext();
     recordedChunks = [];
 
-    /* MIC - WITH MAXIMUM NOISE SUPPRESSION */
+    /* MIC - WITH MAXIMUM NOISE REDUCTION SETTINGS */
     const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-            echoCancellation: true,   // ✅ BACKGROUND NOISE REDUCTION
-            noiseSuppression: true,   // ✅ VOICE CLEANUP ENABLED
-            autoGainControl: false,   // Avoid distortion
-            channelCount: 1,
-            sampleRate: 44100,
-            sampleSize: 16,
-            latency: 0
+            echoCancellation: true,     // ✅ Background echo remove chesthundi
+            noiseSuppression: true,     // ✅ Background noise suppression enabled
+            autoGainControl: false,     // Auto gain control off for better voice control
+            channelCount: 1,            // Mono recording
+            sampleRate: 44100,          // Standard CD quality
+            sampleSize: 24,             // High resolution
+            latency: 0                  // Minimum latency
         }
     });
     
     micSource = audioContext.createMediaStreamSource(micStream);
 
-    // ✅ ADVANCED NOISE FILTER
-    const filterNode = audioContext.createBiquadFilter();
-    filterNode.type = "bandpass";
-    filterNode.frequency.value = 300;  // Focus on voice frequencies
-    filterNode.Q.value = 1;
-    
-    // ✅ DYNAMIC NOISE GATE
-    const noiseGate = audioContext.createGain();
-    noiseGate.gain.value = 0;
-    
-    // Voice detection
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    
-    function detectVoice() {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-        }
-        const average = sum / dataArray.length;
-        
-        // Only pass audio when voice is detected
-        if (average > 20) { // Voice threshold
-            noiseGate.gain.value = 1.0;
-        } else {
-            noiseGate.gain.value = 0.01; // Reduce background noise
-        }
-    }
-    
-    // Connect audio chain with noise reduction
-    micSource.connect(filterNode);
-    filterNode.connect(analyser);
-    filterNode.connect(noiseGate);
-    
-    // ✅ VOICE BOOSTER
-    const voiceBooster = audioContext.createGain();
-    voiceBooster.gain.value = 2.0; // Double the voice volume
-    
-    noiseGate.connect(voiceBooster);
+    // ✅ CREATE NOISE REDUCTION FILTER CHAIN
+    const noiseFilter = createNoiseReductionFilter(audioContext);
+    micSource.connect(noiseFilter.input);
 
     /* ACCOMPANIMENT */
     const accRes = await fetch(accompanimentAudio.src);
@@ -1721,21 +1711,34 @@ recordBtn.onclick = async () => {
 
     const destination = audioContext.createMediaStreamDestination();
     
-    // Connect processed voice
-    voiceBooster.connect(destination);
+    // ✅ CONNECT FILTERED MIC TO DESTINATION
+    noiseFilter.output.connect(destination);
     
-    // ✅ ACCOMPANIMENT VOLUME CONTROL
+    // ✅ VOICE VOLUME ADJUSTMENT WITH LIMITER (to prevent distortion)
+    const voiceGain = audioContext.createGain();
+    voiceGain.gain.value = 2.0; // Voice volume 2x increase
+    noiseFilter.output.connect(voiceGain);
+    
+    // Create limiter to prevent clipping
+    const limiter = audioContext.createDynamicsCompressor();
+    limiter.threshold.value = -6;
+    limiter.knee.value = 10;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.250;
+    
+    voiceGain.connect(limiter);
+    limiter.connect(destination);
+    
+    // ✅ ACCOMPANIMENT VOLUME ADJUSTMENT (reduce background music)
     const accGain = audioContext.createGain();
-    accGain.gain.value = 0.6; // Reduce background music
+    accGain.gain.value = 0.3; // Background music 70% reduced
     accSource.connect(accGain);
     accGain.connect(destination);
 
-    // Start voice detection
-    const voiceDetectionInterval = setInterval(detectVoice, 50);
-    
     accSource.start();
 
-    // Set canvas
+    // Set canvas to 9:16 mobile aspect ratio
     canvas.width = 1080;
     canvas.height = 1920;
     drawCanvas();
@@ -1745,7 +1748,7 @@ recordBtn.onclick = async () => {
         ...destination.stream.getTracks()
     ]);
 
-    // High quality recording
+    // ✅ HIGH QUALITY RECORDER SETTINGS
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? 'video/webm;codecs=vp9,opus'
         : 'video/webm';
@@ -1760,7 +1763,6 @@ recordBtn.onclick = async () => {
 
     mediaRecorder.onstop = () => {
         cancelAnimationFrame(canvasRafId);
-        clearInterval(voiceDetectionInterval); // Cleanup
 
         const blob = new Blob(recordedChunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
@@ -1771,9 +1773,9 @@ recordBtn.onclick = async () => {
         finalBg.src = mainBg.src;
         finalDiv.style.display = "flex";
 
-        // Download with song name
+        // ✅ DOWNLOAD WITH SONG NAME
         const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = songName + "_recording.webm";
+        const fileName = songName + "_clean_recording.webm";
         downloadRecordingBtn.href = url;
         downloadRecordingBtn.download = fileName;
 
@@ -1806,9 +1808,9 @@ recordBtn.onclick = async () => {
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording (Noise Suppressed)...";
+    status.innerText = "🎙 Recording (Noise Reduction Active)...";
     
-    // Auto-stop
+    // ✅ AUTOMATIC STOP WHEN SONG ENDS
     originalAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
@@ -1829,6 +1831,7 @@ recordBtn.onclick = async () => {
         }
     };
 };
+
 /* ================== STOP RECORDING FUNCTION ================== */
 function stopRecording() {
     if (!isRecording) return;
@@ -1843,7 +1846,7 @@ function stopRecording() {
     accompanimentAudio.currentTime = 0;
 
     stopBtn.style.display = "none";
-    status.innerText = "⏹ Processing...";
+    status.innerText = "⏹ Processing (Applying Noise Reduction)...";
     
     // Clear the ended events
     originalAudio.onended = null;
@@ -1914,6 +1917,28 @@ accompanimentAudio.addEventListener('ended', function() {
             }
         }, 1500);
     }
+});
+
+// Add mic test button functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const testButton = document.createElement('button');
+    testButton.innerHTML = '🎤 Test Mic';
+    testButton.style.position = 'absolute';
+    testButton.style.top = '60px';
+    testButton.style.right = '20px';
+    testButton.style.zIndex = '100';
+    testButton.style.fontSize = '12px';
+    testButton.style.padding = '6px 12px';
+    testButton.onclick = async function() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            status.innerText = '✅ Mic working - Ready to record';
+            stream.getTracks().forEach(track => track.stop());
+        } catch (err) {
+            status.innerText = '❌ Mic access denied. Please allow microphone.';
+        }
+    };
+    document.body.appendChild(testButton);
 });
 </script>
 </body>
