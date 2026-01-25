@@ -24,7 +24,7 @@ def ensure_logo_exists():
     # If logo doesn't exist locally, try to download from GitHub
     if not os.path.exists(logo_path):
         try:
-            logo_url = "https://github.com/Swarna-0/karaoke_songs-/raw/main/media/logo/logoo.png"
+            logo_url = "https://github.com/branks3-sing/singing/blob/main/media/logo/logoo.png"
             response = requests.get(logo_url, timeout=10)
             if response.status_code == 200:
                 with open(logo_path, "wb") as f:
@@ -60,7 +60,7 @@ st.set_page_config(
 )
 
 # --------- CONFIG: set your deployed app URL here ----------
-APP_URL = "www.branks3.com"
+APP_URL = "https://www.branks3.com/"
 
 # 🔒 SECURITY: Environment Variables for Password Hashes
 ADMIN_HASH = os.getenv("ADMIN_HASH", "")
