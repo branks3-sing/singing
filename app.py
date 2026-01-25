@@ -9,7 +9,7 @@ import time
 import sqlite3
 from datetime import datetime
 import shutil
-from PIL import Image, ImageDraw  # Added ImageDraw import
+from PIL import Image
 import requests
 from io import BytesIO
 
@@ -32,6 +32,7 @@ def ensure_logo_exists():
                 print(f"✅ Logo downloaded from GitHub")
             else:
                 # Create a simple placeholder logo
+                from PIL import ImageDraw
                 img = Image.new('RGB', (512, 512), color='#1E3A8A')
                 d = ImageDraw.Draw(img)
                 d.text((200, 220), "🎤", fill='white', font_size=100)
@@ -915,7 +916,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         with col3:
             uploaded_lyrics_image = st.file_uploader(
                 "Lyrics Image (_lyrics_bg.jpg / .png)",
-                type=["jpg", "jpeg", ".png"],
+                type=["jpg", "jpeg", "png"],
                 key="lyrics_upload"
             )
 
@@ -1360,7 +1361,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE - VOICE ONLY RECORDING
+    # ✅ FIXED KARAOKE TEMPLATE - ORIGINAL SONG NOT IN RECORDING
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1495,8 +1496,8 @@ canvas {
     <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%"></audio>
     <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%"></audio>
     <div class="controls">
-      <button id="playBtn">▶ Play</button>
-      <button id="recordBtn">🎙 Record</button>
+      <button id="playBtn">▶ Play Original</button>
+      <button id="recordBtn">🎙 Record Karaoke</button>
       <button id="stopBtn" style="display:none;">⏹ Stop</button>
     </div>
 </div>
@@ -1507,7 +1508,7 @@ canvas {
     <div id="status"></div>
     <div class="lyrics" id="finalLyrics"></div>
     <div class="controls">
-      <button id="playRecordingBtn">▶ Play</button>
+      <button id="playRecordingBtn">▶ Play Recording</button>
       <a id="downloadRecordingBtn" href="#" download>
         <button>⬇ Download</button>
       </a>
@@ -1529,6 +1530,7 @@ let audioContext, micSource, accSource;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
+let originalAudioPlaying = false;
 
 /* ================== ELEMENTS ================== */
 const playBtn = document.getElementById("playBtn");
@@ -1576,34 +1578,29 @@ document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) await ensureAudioContext();
 });
 
-/* ================== PLAY ORIGINAL ================== */
+/* ================== PLAY ORIGINAL SONG (FOR REFERENCE ONLY) ================== */
 playBtn.onclick = async () => {
     await ensureAudioContext();
     if (originalAudio.paused) {
         originalAudio.currentTime = 0;
         await safePlay(originalAudio);
         playBtn.innerText = "⏹ Stop";
-        status.innerText = "🎵 Playing song...";
+        status.innerText = "🎵 Playing original song...";
+        originalAudioPlaying = true;
         
-        // Auto-stop when song ends
         originalAudio.onended = () => {
-            if (playBtn.innerText === "⏹ Stop") {
-                playBtn.innerText = "▶ Play";
-                status.innerText = "✅ Song completed";
-                
-                setTimeout(() => {
-                    if (status.innerText === "✅ Song completed") {
-                        status.innerText = "Ready 🎤";
-                    }
-                }, 1500);
+            if (originalAudioPlaying) {
+                originalAudioPlaying = false;
+                playBtn.innerText = "▶ Play Original";
+                status.innerText = "Ready 🎤";
             }
         };
     } else {
         originalAudio.pause();
         originalAudio.currentTime = 0;
-        playBtn.innerText = "▶ Play";
+        playBtn.innerText = "▶ Play Original";
         status.innerText = "⏹ Stopped";
-        
+        originalAudioPlaying = false;
         originalAudio.onended = null;
     }
 };
@@ -1633,7 +1630,6 @@ function drawCanvas() {
 
     ctx.drawImage(mainBg, x, y, drawW, drawH);
 
-    /* LOGO - CLEAR AND VISIBLE */
     ctx.globalAlpha = 1;
     ctx.drawImage(logoImg, 100, 100, 100, 100);
     ctx.globalAlpha = 1;
@@ -1641,66 +1637,78 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD (VOICE ONLY) ================== */
+/* ================== RECORD KARAOKE (ONLY VOICE + ACCOMPANIMENT) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
+    
+    // Stop original audio if playing
+    if (!originalAudio.paused) {
+        originalAudio.pause();
+        originalAudio.currentTime = 0;
+        playBtn.innerText = "▶ Play Original";
+        originalAudioPlaying = false;
+    }
+    
     isRecording = true;
-
     await ensureAudioContext();
     recordedChunks = [];
 
-    /* MIC - HIGH QUALITY SETTINGS */
+    /* MIC SETUP - HIGH QUALITY VOICE RECORDING */
     const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
             channelCount: 1,
-            sampleRate: 48000,
-            sampleSize: 16,
-            latency: 0
+            sampleRate: 48000
         }
     });
     
     micSource = audioContext.createMediaStreamSource(micStream);
 
-    // ✅ IMPORTANT: ACCOMPANIMENT PLAYBACK ONLY (not in recording)
+    /* ACCOMPANIMENT (BACKGROUND MUSIC ONLY) */
     const accRes = await fetch(accompanimentAudio.src);
     const accBuf = await accRes.arrayBuffer();
     const accDecoded = await audioContext.decodeAudioData(accBuf);
 
     accSource = audioContext.createBufferSource();
     accSource.buffer = accDecoded;
+
+    const destination = audioContext.createMediaStreamDestination();
     
-    // ✅ Connect accompaniment to speakers ONLY (not to recording)
+    // ✅ VOICE VOLUME BOOST
+    const micGain = audioContext.createGain();
+    micGain.gain.value = 2.0; // Voice louder
+    micSource.connect(micGain);
+    micGain.connect(destination);
+    
+    // ✅ ACCOMPANIMENT VOLUME CONTROL (softer)
     const accGain = audioContext.createGain();
-    accGain.gain.value = 0.7;
+    accGain.gain.value = 0.8; // Background music softer
     accSource.connect(accGain);
-    accGain.connect(audioContext.destination); // Only to speakers
-    
+    accGain.connect(destination);
+
     accSource.start();
 
-    // Set canvas to 9:16 mobile aspect ratio
+    // Start canvas drawing
     canvas.width = 1080;
     canvas.height = 1920;
     drawCanvas();
 
-    // ✅ ONLY CAPTURE CANVAS FOR VIDEO, MIC FOR AUDIO (NO ACCOMPANIMENT IN RECORDING)
-    const canvasStream = canvas.captureStream(30);
-    const combinedStream = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        ...micStream.getAudioTracks() // ✅ Only mic audio, no accompaniment
+    const stream = new MediaStream([
+        ...canvas.captureStream(30).getTracks(),
+        ...destination.stream.getTracks()
     ]);
 
-    // ✅ HIGH QUALITY RECORDER SETTINGS
+    // High quality recording settings
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? 'video/webm;codecs=vp9,opus'
         : 'video/webm';
     
-    mediaRecorder = new MediaRecorder(combinedStream, {
+    mediaRecorder = new MediaRecorder(stream, {
         mimeType: mimeType,
         videoBitsPerSecond: 2500000,
-        audioBitsPerSecond: 128000
+        audioBitsPerSecond: 192000 // Higher audio quality
     });
     
     mediaRecorder.ondataavailable = e => e.data.size && recordedChunks.push(e.data);
@@ -1717,12 +1725,13 @@ recordBtn.onclick = async () => {
         finalBg.src = mainBg.src;
         finalDiv.style.display = "flex";
 
-        // ✅ DOWNLOAD WITH SONG NAME
+        // Download with song name
         const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = songName + "_voice_only.webm";
+        const fileName = songName + "_karaoke_recording.webm";
         downloadRecordingBtn.href = url;
         downloadRecordingBtn.download = fileName;
 
+        // Playback button for recording
         playRecordingBtn.onclick = () => {
             if (!isPlayingRecording) {
                 playRecordingAudio = new Audio(url);
@@ -1730,13 +1739,13 @@ recordBtn.onclick = async () => {
                 playRecordingBtn.innerText = "⏹ Stop";
                 isPlayingRecording = true;
                 playRecordingAudio.onended = () => {
-                    playRecordingBtn.innerText = "▶ Play";
+                    playRecordingBtn.innerText = "▶ Play Recording";
                     isPlayingRecording = false;
                 };
             } else {
                 playRecordingAudio.pause();
                 playRecordingAudio.currentTime = 0;
-                playRecordingBtn.innerText = "▶ Play";
+                playRecordingBtn.innerText = "▶ Play Recording";
                 isPlayingRecording = false;
             }
         };
@@ -1744,21 +1753,22 @@ recordBtn.onclick = async () => {
 
     mediaRecorder.start();
 
-    // ✅ PLAY ORIGINAL SONG FOR USER TO HEAR (but not in recording)
-    originalAudio.currentTime = 0;
+    // Start accompaniment (background music)
     accompanimentAudio.currentTime = 0;
+    await safePlay(accompanimentAudio);
     
-    // Play both for the user to hear
-    await safePlay(originalAudio); // User listens to original
-    // accompaniment is already playing through accSource
-    
+    // Play original song SEPARATELY (only for user to hear, not recorded)
+    originalAudio.currentTime = 0;
+    await safePlay(originalAudio);
+
+    // Update UI
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording (Voice Only)...";
+    status.innerText = "🎙 Recording Karaoke (Voice + Accompaniment)...";
     
-    // ✅ AUTOMATIC STOP WHEN SONG ENDS
-    originalAudio.onended = () => {
+    // ✅ AUTOMATIC STOP WHEN ACCOMPANIMENT ENDS
+    accompanimentAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
                 if (isRecording) {
@@ -1768,7 +1778,8 @@ recordBtn.onclick = async () => {
         }
     };
     
-    accompanimentAudio.onended = () => {
+    // Also auto-stop when original song ends (for safety)
+    originalAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
                 if (isRecording) {
@@ -1779,7 +1790,7 @@ recordBtn.onclick = async () => {
     };
 };
 
-/* ================== STOP RECORDING ================== */
+/* ================== STOP RECORDING FUNCTION ================== */
 function stopRecording() {
     if (!isRecording) return;
     isRecording = false;
@@ -1793,9 +1804,9 @@ function stopRecording() {
     accompanimentAudio.currentTime = 0;
 
     stopBtn.style.display = "none";
-    status.innerText = "⏹ Processing...";
+    status.innerText = "⏹ Processing recording...";
     
-    // Clear the ended events
+    // Clear event listeners
     originalAudio.onended = null;
     accompanimentAudio.onended = null;
 }
@@ -1824,7 +1835,7 @@ newRecordingBtn.onclick = () => {
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
-    playBtn.innerText = "▶ Play";
+    playBtn.innerText = "▶ Play Original";
     status.innerText = "Ready 🎤";
     
     // Clear all event listeners
@@ -1833,21 +1844,15 @@ newRecordingBtn.onclick = () => {
 };
 
 /* ================== INITIALIZE ================== */
-originalAudio.onloadedmetadata = function() {
-    console.log("Song duration:", originalAudio.duration, "seconds");
-};
+// Set initial status
+status.innerText = "Ready 🎤 - Play original or record karaoke";
 
-// Reset button when audio ends naturally
+// Auto-reset when original song ends
 originalAudio.addEventListener('ended', function() {
-    if (playBtn.innerText === "⏹ Stop") {
-        playBtn.innerText = "▶ Play";
-        status.innerText = "✅ Song completed";
-        
-        setTimeout(() => {
-            if (status.innerText === "✅ Song completed") {
-                status.innerText = "Ready 🎤";
-            }
-        }, 1500);
+    if (!isRecording && originalAudioPlaying) {
+        originalAudioPlaying = false;
+        playBtn.innerText = "▶ Play Original";
+        status.innerText = "Ready 🎤";
     }
 });
 </script>
