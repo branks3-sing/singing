@@ -1778,7 +1778,7 @@ recordBtn.onclick = async () => {
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording... (Voice + Background Music)";
+        status.innerText = "🎙 Recording...";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
