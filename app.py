@@ -1657,19 +1657,20 @@ recordBtn.onclick = async () => {
     /* MIC - WITH OPTIMIZED SETTINGS FOR CLARITY */
     const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-            echoCancellation: false,  // Background noise filter తొలగించు
-            noiseSuppression: false,  // శబ్ద నిరోధకం ఆపు (voice natural ga untundi)
-            autoGainControl: false,   // ఆటోమేటిక్ వాల్యూమ్ కంట్రోల్ ఆపు (distortion తగ్గించు)
-            channelCount: 1,          // Mono recording (file size తగ్గించు)
-            sampleRate: 48000,        // High quality sample rate
-            sampleSize: 16,           // Better audio resolution
-            latency: 0                // Minimum latency
-        }
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+            sampleRate: 48000,
+            sampleSize: 16,
+            latency: 0
+        },
+        video: false // No video from mic
     });
     
     micSource = audioContext.createMediaStreamSource(micStream);
 
-    /* ACCOMPANIMENT */
+    /* ACCOMPANIMENT - For user to hear while singing */
     const accRes = await fetch(accompanimentAudio.src);
     const accBuf = await accRes.arrayBuffer();
     const accDecoded = await audioContext.decodeAudioData(accBuf);
@@ -1681,15 +1682,17 @@ recordBtn.onclick = async () => {
     
     // ✅ VOICE VOLUME ADJUSTMENT (Mic gain control)
     const micGain = audioContext.createGain();
-    micGain.gain.value = 1.5; // Voice volume increase (1.0 = normal)
+    micGain.gain.value = 1.5; // Voice volume increase
     micSource.connect(micGain);
-    micGain.connect(destination);
+    micGain.connect(destination); // ✅ Only mic goes to recording
     
-    // ✅ ACCOMPANIMENT VOLUME ADJUSTMENT
+    // ✅ ACCOMPANIMENT - FOR USER TO HEAR ONLY (NOT RECORDED)
     const accGain = audioContext.createGain();
-    accGain.gain.value = 0.7; // Background music volume decrease
+    accGain.gain.value = 0.7; // Background music volume
     accSource.connect(accGain);
-    accGain.connect(destination);
+    // ❌ DO NOT CONNECT TO DESTINATION - accompaniment will not be recorded
+    // Connect only to audio output for user to hear
+    accGain.connect(audioContext.destination);
 
     accSource.start();
 
@@ -1698,10 +1701,14 @@ recordBtn.onclick = async () => {
     canvas.height = 1920;
     drawCanvas();
 
-    const stream = new MediaStream([
-        ...canvas.captureStream(30).getTracks(),
-        ...destination.stream.getTracks()
-    ]);
+    // Get MIC audio track (voice only)
+    const micAudioTrack = micStream.getAudioTracks()[0];
+    
+    // Get Canvas video track
+    const canvasVideoTrack = canvas.captureStream(30).getVideoTracks()[0];
+    
+    // ✅ COMBINE: Canvas Video + Mic Audio (ONLY VOICE)
+    const stream = new MediaStream([canvasVideoTrack, micAudioTrack]);
 
     // ✅ HIGH QUALITY RECORDER SETTINGS
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
@@ -1730,7 +1737,7 @@ recordBtn.onclick = async () => {
 
         // ✅ DOWNLOAD WITH SONG NAME
         const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = songName + "_recording.webm";
+        const fileName = songName + "_voice_recording.webm";
         downloadRecordingBtn.href = url;
         downloadRecordingBtn.download = fileName;
 
@@ -1755,27 +1762,16 @@ recordBtn.onclick = async () => {
 
     mediaRecorder.start();
 
-    originalAudio.currentTime = 0;
+    // Play accompaniment for user to sing along
     accompanimentAudio.currentTime = 0;
-    await safePlay(originalAudio);
     await safePlay(accompanimentAudio);
 
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording (High Quality)...";
+    status.innerText = "🎙 Recording Voice Only...";
     
-    // ✅ AUTOMATIC STOP WHEN SONG ENDS
-    originalAudio.onended = () => {
-        if (isRecording) {
-            setTimeout(() => {
-                if (isRecording) {
-                    stopRecording();
-                }
-            }, 500);
-        }
-    };
-    
+    // ✅ AUTOMATIC STOP WHEN ACCOMPANIMENT ENDS
     accompanimentAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
