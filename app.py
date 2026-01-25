@@ -1653,61 +1653,49 @@ recordBtn.onclick = async () => {
     await ensureAudioContext();
     recordedChunks = [];
 
-    /* MIC - WITH OPTIMIZED SETTINGS FOR CLARITY */
+    /* 1. మైక్ మాత్రమే రికార్డ్ కోసం */
     const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-            echoCancellation: false,  // Background noise filter తొలగించు
-            noiseSuppression: false,  // శబ్ద నిరోధకం ఆపు (voice natural ga untundi)
-            autoGainControl: false,   // ఆటోమేటిక్ వాల్యూమ్ కంట్రోల్ ఆపు (distortion తగ్గించు)
-            channelCount: 1,          // Mono recording (file size తగ్గించు)
-            sampleRate: 48000,        // High quality sample rate
-            sampleSize: 16,           // Better audio resolution
-            latency: 0                // Minimum latency
-        }
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+            sampleRate: 48000,
+            sampleSize: 16,
+            latency: 0
+        },
+        video: false // వీడియో లేదు
     });
     
     micSource = audioContext.createMediaStreamSource(micStream);
 
-    /* ACCOMPANIMENT */
-    const accRes = await fetch(accompanimentAudio.src);
-    const accBuf = await accRes.arrayBuffer();
-    const accDecoded = await audioContext.decodeAudioData(accBuf);
-
-    accSource = audioContext.createBufferSource();
-    accSource.buffer = accDecoded;
-
+    /* 2. కేవలం మైక్ మాత్రమే మిక్సింగ్ డెస్టినేషన్కు కనెక్ట్ చేయండి */
     const destination = audioContext.createMediaStreamDestination();
     
-    // ✅ VOICE VOLUME ADJUSTMENT (Mic gain control)
+    // ✅ VOICE VOLUME ADJUSTMENT
     const micGain = audioContext.createGain();
-    micGain.gain.value = 1.5; // Voice volume increase (1.0 = normal)
+    micGain.gain.value = 1.5;
     micSource.connect(micGain);
     micGain.connect(destination);
-    
-    // ✅ ACCOMPANIMENT VOLUME ADJUSTMENT
-    const accGain = audioContext.createGain();
-    accGain.gain.value = 0.7; // Background music volume decrease
-    accSource.connect(accGain);
-    accGain.connect(destination);
-
-    accSource.start();
 
     // Set canvas to 9:16 mobile aspect ratio
     canvas.width = 1080;
     canvas.height = 1920;
     drawCanvas();
 
-    const stream = new MediaStream([
-        ...canvas.captureStream(30).getTracks(),
-        ...destination.stream.getTracks()
-    ]);
+    /* 3. కేవలం canvas వీడియో + మైక్ ఆడియో మాత్రమే రికార్డ్ */
+    const canvasStream = canvas.captureStream(30);
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    const audioTrack = destination.stream.getAudioTracks()[0];
+
+    const mixedStream = new MediaStream([videoTrack, audioTrack]);
 
     // ✅ HIGH QUALITY RECORDER SETTINGS
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? 'video/webm;codecs=vp9,opus'
         : 'video/webm';
     
-    mediaRecorder = new MediaRecorder(stream, {
+    mediaRecorder = new MediaRecorder(mixedStream, {
         mimeType: mimeType,
         videoBitsPerSecond: 2500000,
         audioBitsPerSecond: 128000
@@ -1754,28 +1742,21 @@ recordBtn.onclick = async () => {
 
     mediaRecorder.start();
 
+    /* 4. రికార్డింగ్ సమయంలో original song మాత్రమే ప్లే చేయండి */
     originalAudio.currentTime = 0;
-    accompanimentAudio.currentTime = 0;
     await safePlay(originalAudio);
-    await safePlay(accompanimentAudio);
+    
+    // Accompaniment ఆడియోను ప్లే చేయకూడదు
+    accompanimentAudio.pause();
+    accompanimentAudio.currentTime = 0;
 
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording (High Quality)...";
+    status.innerText = "🎙 Recording (Voice Only)...";
     
     // ✅ AUTOMATIC STOP WHEN SONG ENDS
     originalAudio.onended = () => {
-        if (isRecording) {
-            setTimeout(() => {
-                if (isRecording) {
-                    stopRecording();
-                }
-            }, 500);
-        }
-    };
-    
-    accompanimentAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
                 if (isRecording) {
@@ -1792,11 +1773,14 @@ function stopRecording() {
     isRecording = false;
 
     try { mediaRecorder.stop(); } catch {}
-    try { accSource.stop(); } catch {}
+    try { micSource.disconnect(); } catch {}
 
+    // Original songను మాత్రమే స్టాప్ చేయండి
     originalAudio.pause();
-    accompanimentAudio.pause();
     originalAudio.currentTime = 0;
+
+    // Accompaniment ఏమీ ప్లే కాలేదు కాబట్టి దాన్ని స్టాప్ చేయనవసరం లేదు
+    accompanimentAudio.pause();
     accompanimentAudio.currentTime = 0;
 
     stopBtn.style.display = "none";
@@ -1804,9 +1788,7 @@ function stopRecording() {
     
     // Clear the ended events
     originalAudio.onended = null;
-    accompanimentAudio.onended = null;
-}
-
+};
 /* ================== STOP BUTTON CLICK ================== */
 stopBtn.onclick = stopRecording;
 
