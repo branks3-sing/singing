@@ -1612,40 +1612,6 @@ playBtn.onclick = async () => {
     }
 };
 
-/* ================== CANVAS DRAW FOR MOBILE 9:16 ================== */
-function drawCanvas() {
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Mobile-friendly 9:16 aspect ratio (1080x1920)
-    const canvasW = canvas.width; // 1080
-    const canvasH = canvas.height * 0.85; // 1920 * 0.85 = ~1632
-
-    const imgRatio = mainBg.naturalWidth / mainBg.naturalHeight;
-    const canvasRatio = canvasW / canvasH;
-
-    let drawW, drawH;
-    if (imgRatio > canvasRatio) {
-        drawW = canvasW;
-        drawH = canvasW / imgRatio;
-    } else {
-        drawH = canvasH;
-        drawW = canvasH * imgRatio;
-    }
-
-    const x = (canvasW - drawW) / 2;
-    const y = 0; // TOP aligned
-
-    ctx.drawImage(mainBg, x, y, drawW, drawH);
-
-    /* LOGO - CLEAR AND VISIBLE */
-    ctx.globalAlpha = 1;
-    ctx.drawImage(logoImg, 100, 100, 100, 100);
-    ctx.globalAlpha = 1;
-
-    canvasRafId = requestAnimationFrame(drawCanvas);
-}
-
 /* ================== RECORD (WITH HIGH QUALITY SETTINGS) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
@@ -1654,7 +1620,7 @@ recordBtn.onclick = async () => {
     await ensureAudioContext();
     recordedChunks = [];
 
-    /* MIC - WITH OPTIMIZED SETTINGS FOR CLARITY */
+    /* 1. మైక్ మాత్రమే రికార్డ్ కోసం */
     const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
             echoCancellation: false,
@@ -1665,57 +1631,38 @@ recordBtn.onclick = async () => {
             sampleSize: 16,
             latency: 0
         },
-        video: false // No video from mic
+        video: false // వీడియో లేదు
     });
     
     micSource = audioContext.createMediaStreamSource(micStream);
 
-    /* ACCOMPANIMENT - For user to hear while singing */
-    const accRes = await fetch(accompanimentAudio.src);
-    const accBuf = await accRes.arrayBuffer();
-    const accDecoded = await audioContext.decodeAudioData(accBuf);
-
-    accSource = audioContext.createBufferSource();
-    accSource.buffer = accDecoded;
-
+    /* 2. కేవలం మైక్ మాత్రమే మిక్సింగ్ డెస్టినేషన్కు కనెక్ట్ చేయండి */
     const destination = audioContext.createMediaStreamDestination();
     
-    // ✅ VOICE VOLUME ADJUSTMENT (Mic gain control)
+    // ✅ VOICE VOLUME ADJUSTMENT
     const micGain = audioContext.createGain();
-    micGain.gain.value = 1.5; // Voice volume increase
+    micGain.gain.value = 1.5;
     micSource.connect(micGain);
-    micGain.connect(destination); // ✅ Only mic goes to recording
-    
-    // ✅ ACCOMPANIMENT - FOR USER TO HEAR ONLY (NOT RECORDED)
-    const accGain = audioContext.createGain();
-    accGain.gain.value = 0.7; // Background music volume
-    accSource.connect(accGain);
-    // ❌ DO NOT CONNECT TO DESTINATION - accompaniment will not be recorded
-    // Connect only to audio output for user to hear
-    accGain.connect(audioContext.destination);
-
-    accSource.start();
+    micGain.connect(destination);
 
     // Set canvas to 9:16 mobile aspect ratio
     canvas.width = 1080;
     canvas.height = 1920;
     drawCanvas();
 
-    // Get MIC audio track (voice only)
-    const micAudioTrack = micStream.getAudioTracks()[0];
-    
-    // Get Canvas video track
-    const canvasVideoTrack = canvas.captureStream(30).getVideoTracks()[0];
-    
-    // ✅ COMBINE: Canvas Video + Mic Audio (ONLY VOICE)
-    const stream = new MediaStream([canvasVideoTrack, micAudioTrack]);
+    /* 3. కేవలం canvas వీడియో + మైక్ ఆడియో మాత్రమే రికార్డ్ */
+    const canvasStream = canvas.captureStream(30);
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    const audioTrack = destination.stream.getAudioTracks()[0];
+
+    const mixedStream = new MediaStream([videoTrack, audioTrack]);
 
     // ✅ HIGH QUALITY RECORDER SETTINGS
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? 'video/webm;codecs=vp9,opus'
         : 'video/webm';
     
-    mediaRecorder = new MediaRecorder(stream, {
+    mediaRecorder = new MediaRecorder(mixedStream, {
         mimeType: mimeType,
         videoBitsPerSecond: 2500000,
         audioBitsPerSecond: 128000
@@ -1737,7 +1684,7 @@ recordBtn.onclick = async () => {
 
         // ✅ DOWNLOAD WITH SONG NAME
         const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = songName + "_voice_recording.webm";
+        const fileName = songName + "_recording.webm";
         downloadRecordingBtn.href = url;
         downloadRecordingBtn.download = fileName;
 
@@ -1762,17 +1709,21 @@ recordBtn.onclick = async () => {
 
     mediaRecorder.start();
 
-    // Play accompaniment for user to sing along
+    /* 4. రికార్డింగ్ సమయంలో original song మాత్రమే ప్లే చేయండి */
+    originalAudio.currentTime = 0;
+    await safePlay(originalAudio);
+    
+    // Accompaniment ఆడియోను ప్లే చేయకూడదు
+    accompanimentAudio.pause();
     accompanimentAudio.currentTime = 0;
-    await safePlay(accompanimentAudio);
 
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording Voice Only...";
+    status.innerText = "🎙 Recording (Voice Only)...";
     
-    // ✅ AUTOMATIC STOP WHEN ACCOMPANIMENT ENDS
-    accompanimentAudio.onended = () => {
+    // ✅ AUTOMATIC STOP WHEN SONG ENDS
+    originalAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
                 if (isRecording) {
@@ -1789,11 +1740,14 @@ function stopRecording() {
     isRecording = false;
 
     try { mediaRecorder.stop(); } catch {}
-    try { accSource.stop(); } catch {}
+    try { micSource.disconnect(); } catch {}
 
+    // Original songను మాత్రమే స్టాప్ చేయండి
     originalAudio.pause();
-    accompanimentAudio.pause();
     originalAudio.currentTime = 0;
+
+    // Accompaniment ఏమీ ప్లే కాలేదు కాబట్టి దాన్ని స్టాప్ చేయనవసరం లేదు
+    accompanimentAudio.pause();
     accompanimentAudio.currentTime = 0;
 
     stopBtn.style.display = "none";
@@ -1801,9 +1755,7 @@ function stopRecording() {
     
     // Clear the ended events
     originalAudio.onended = null;
-    accompanimentAudio.onended = null;
-}
-
+};
 /* ================== STOP BUTTON CLICK ================== */
 stopBtn.onclick = stopRecording;
 
