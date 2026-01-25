@@ -1437,7 +1437,7 @@ body {
     z-index: 30; 
 }
 button { 
-    background: linear-gradient(135deg, #ff0066); 
+    background: linear-gradient(135deg, #ff66cc); 
     border: none; 
     color: white; 
     padding: 8px 20px; 
