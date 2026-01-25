@@ -218,7 +218,7 @@ def load_shared_links_from_db():
         for song_name, shared_by in results:
             links[song_name] = {"shared_by": shared_by, "active": True}
     except:
-        pass
+    pass
     return links
 
 def save_metadata_to_db(song_name, uploaded_by):
@@ -1361,500 +1361,611 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH HIGH QUALITY RECORDING
+    # ✅ UPDATED KARAOKE TEMPLATE - ONLY VOICE RECORDING, NO ORIGINAL SONG
     karaoke_template = """
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>🎤 sing_along </title>
-<style>
-* { 
-    margin: 0; 
-    padding: 0; 
-    box-sizing: border-box; 
-}
-html, body {
-    overflow: hidden !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    background: #000 !important;
-}
-body { 
-    background: #000; 
-    font-family: 'Poppins', sans-serif; 
-    height: 100vh !important;
-    width: 100vw !important;
-    overflow: hidden !important;
-    position: fixed !important;
-}
-.reel-container, .final-reel-container { 
-    width: 100vw !important; 
-    height: 100vh !important; 
-    position: absolute; 
-    background: #111; 
-    overflow: hidden !important;
-}
-#status { 
-    position: absolute; 
-    top: 20px; 
-    width: 100%; 
-    text-align: center; 
-    font-size: 14px; 
-    color: #ccc; 
-    z-index: 20; 
-    text-shadow: 1px 1px 6px rgba(0,0,0,0.9); 
-}
-.reel-bg { 
-    position: absolute; 
-    top: 0; 
-    left: 0; 
-    width: 100vw !important; 
-    height: 85vh !important; 
-    object-fit: contain !important;
-    object-position: top !important;
-}
-.lyrics { 
-    position: absolute; 
-    bottom: 25%; 
-    width: 100%; 
-    text-align: center; 
-    font-size: 2vw; 
-    font-weight: bold; 
-    color: white; 
-    text-shadow: 2px 2px 10px black; 
-}
-.controls { 
-    position: absolute; 
-    bottom: 20%; 
-    width: 100%; 
-    text-align: center; 
-    z-index: 30; 
-}
-button { 
-    background: linear-gradient(135deg, #ff0066, #ff66cc); 
-    border: none; 
-    color: white; 
-    padding: 8px 20px; 
-    border-radius: 25px; 
-    font-size: 13px; 
-    margin: 4px; 
-    box-shadow: 0px 3px 15px rgba(255,0,128,0.4); 
-    cursor: pointer; 
-}
-button:active { 
-    transform: scale(0.95); 
-}
-.final-output { 
-    position: fixed !important; 
-    width: 100vw !important; 
-    height: 100vh !important; 
-    top: 0 !important; 
-    left: 0 !important; 
-    background: rgba(0,0,0,0.9); 
-    display: none; 
-    justify-content: center; 
-    align-items: center; 
-    z-index: 999; 
-}
-#logoImg { 
-    position: absolute; 
-    top: 20px; 
-    left: 20px; 
-    width: 40px;
-    height: 40px;
-    z-index: 50; 
-    opacity: 1;
-    filter: brightness(1.2);
-}
-canvas { 
-    display: none; 
-}
-.back-button { 
-    position: absolute; 
-    top: 20px; 
-    right: 20px; 
-    background: rgba(0,0,0,0.7); 
-    color: white; 
-    padding: 8px 16px; 
-    border-radius: 20px; 
-    text-decoration: none; 
-    font-size: 14px; 
-    z-index: 100; 
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎤 Sing Along - Karaoke</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        html, body {
+            overflow: hidden !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            background: #000 !important;
+        }
+        
+        body {
+            background: #000;
+            font-family: 'Poppins', sans-serif;
+            height: 100vh !important;
+            width: 100vw !important;
+            overflow: hidden !important;
+            position: fixed !important;
+            touch-action: manipulation;
+        }
+        
+        .karaoke-container {
+            width: 100vw !important;
+            height: 100vh !important;
+            position: absolute;
+            background: #111;
+            overflow: hidden !important;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        #status {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 16px;
+            color: #fff;
+            z-index: 20;
+            text-shadow: 1px 1px 6px rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.6);
+            padding: 10px;
+            font-weight: bold;
+        }
+        
+        .lyrics-container {
+            width: 100%;
+            height: 75vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        
+        .lyrics-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .controls {
+            width: 100%;
+            text-align: center;
+            padding: 20px;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #ff0066, #ff66cc);
+            border: none;
+            color: white;
+            padding: 12px 25px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            min-width: 140px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255,0,102,0.3);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255,0,102,0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        #recordBtn.recording {
+            background: linear-gradient(135deg, #ff0000, #ff4444);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+        
+        .logo {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            z-index: 50;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .final-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.95);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+        
+        .final-title {
+            color: white;
+            font-size: 24px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        canvas {
+            display: none;
+        }
+        
+        /* Mobile responsive */
+        @media (max-width: 768px) {
+            button {
+                padding: 10px 20px;
+                font-size: 14px;
+                min-width: 120px;
+            }
+            
+            #status {
+                font-size: 14px;
+                padding: 8px;
+            }
+            
+            .lyrics-container {
+                height: 70vh;
+            }
+            
+            .controls {
+                padding: 15px;
+                gap: 10px;
+            }
+        }
+    </style>
 </head>
 <body>
-
-<div class="reel-container" id="reelContainer">
-    <img class="reel-bg" id="mainBg" src="data:image/jpeg;base64,%%LYRICS_B64%%">
-    <img id="logoImg" src="data:image/png;base64,%%LOGO_B64%%">
-    <div id="status">Ready 🎤</div>
-    <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%"></audio>
-    <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%"></audio>
-    <div class="controls">
-      <button id="playBtn">▶ Play</button>
-      <button id="recordBtn">🎙 Record</button>
-      <button id="stopBtn" style="display:none;">⏹ Stop</button>
-    </div>
-</div>
-
-<div class="final-output" id="finalOutputDiv">
-  <div class="final-reel-container">
-    <img class="reel-bg" id="finalBg">
-    <div id="status"></div>
-    <div class="lyrics" id="finalLyrics"></div>
-    <div class="controls">
-      <button id="playRecordingBtn">▶ Play</button>
-      <a id="downloadRecordingBtn" href="#" download>
-        <button>⬇ Download</button>
-      </a>
-      <button id="newRecordingBtn">🔄 New Recording</button>
-    </div>
-  </div>
-</div>
-
-<canvas id="recordingCanvas" width="1080" height="1920"></canvas>
-
-<script>
-/* ================== GLOBAL STATE ================== */
-let mediaRecorder;
-let recordedChunks = [];
-let playRecordingAudio = null;
-let lastRecordingURL = null;
-
-let audioContext, micSource, accSource;
-let canvasRafId = null;
-let isRecording = false;
-let isPlayingRecording = false;
-
-/* ================== ELEMENTS ================== */
-const playBtn = document.getElementById("playBtn");
-const recordBtn = document.getElementById("recordBtn");
-const stopBtn = document.getElementById("stopBtn");
-const status = document.getElementById("status");
-
-const originalAudio = document.getElementById("originalAudio");
-const accompanimentAudio = document.getElementById("accompaniment");
-
-const finalDiv = document.getElementById("finalOutputDiv");
-const mainBg = document.getElementById("mainBg");
-const finalBg = document.getElementById("finalBg");
-
-const playRecordingBtn = document.getElementById("playRecordingBtn");
-const downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
-const newRecordingBtn = document.getElementById("newRecordingBtn");
-
-const canvas = document.getElementById("recordingCanvas");
-const ctx = canvas.getContext("2d");
-
-const logoImg = new Image();
-logoImg.src = document.getElementById("logoImg").src;
-
-/* ================== AUDIO CONTEXT FIX ================== */
-async function ensureAudioContext() {
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioContext.state === "suspended") {
-        await audioContext.resume();
-    }
-}
-
-async function safePlay(audio) {
-    try {
-        await ensureAudioContext();
-        await audio.play();
-    } catch (e) {
-        console.log("Autoplay blocked:", e);
-    }
-}
-
-document.addEventListener("visibilitychange", async () => {
-    if (!document.hidden) await ensureAudioContext();
-});
-
-/* ================== PLAY ORIGINAL (WITH AUTO-STOP) ================== */
-playBtn.onclick = async () => {
-    await ensureAudioContext();
-    if (originalAudio.paused) {
-        originalAudio.currentTime = 0;
-        await safePlay(originalAudio);
-        playBtn.innerText = "⏹ Stop";
-        status.innerText = "🎵 Playing song...";
+    <div class="karaoke-container" id="mainContainer">
+        <img class="logo" src="data:image/png;base64,%%LOGO_B64%%" alt="Logo">
+        <div id="status">Ready 🎤 - Tap Record to sing</div>
         
-        // Set auto-stop when song ends
-        originalAudio.onended = () => {
-            if (playBtn.innerText === "⏹ Stop") {
-                playBtn.innerText = "▶ Play";
-                status.innerText = "✅ Song completed";
-                
-                // Small delay before showing "Ready 🎤"
-                setTimeout(() => {
-                    if (status.innerText === "✅ Song completed") {
-                        status.innerText = "Ready 🎤";
-                    }
-                }, 1500);
-            }
-        };
-    } else {
-        originalAudio.pause();
-        originalAudio.currentTime = 0;
-        playBtn.innerText = "▶ Play";
-        status.innerText = "⏹ Stopped";
+        <div class="lyrics-container">
+            <img class="lyrics-image" id="lyricsImg" src="data:image/jpeg;base64,%%LYRICS_B64%%" alt="Lyrics">
+        </div>
         
-        // Clear the ended event
-        originalAudio.onended = null;
-    }
-};
-
-/* ================== CANVAS DRAW FOR MOBILE 9:16 ================== */
-function drawCanvas() {
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Mobile-friendly 9:16 aspect ratio (1080x1920)
-    const canvasW = canvas.width; // 1080
-    const canvasH = canvas.height * 0.85; // 1920 * 0.85 = ~1632
-
-    const imgRatio = mainBg.naturalWidth / mainBg.naturalHeight;
-    const canvasRatio = canvasW / canvasH;
-
-    let drawW, drawH;
-    if (imgRatio > canvasRatio) {
-        drawW = canvasW;
-        drawH = canvasW / imgRatio;
-    } else {
-        drawH = canvasH;
-        drawW = canvasH * imgRatio;
-    }
-
-    const x = (canvasW - drawW) / 2;
-    const y = 0; // TOP aligned
-
-    ctx.drawImage(mainBg, x, y, drawW, drawH);
-
-    /* LOGO - CLEAR AND VISIBLE */
-    ctx.globalAlpha = 1;
-    ctx.drawImage(logoImg, 100, 100, 100, 100);
-    ctx.globalAlpha = 1;
-
-    canvasRafId = requestAnimationFrame(drawCanvas);
-}
-
-/* ================== RECORD (WITH HIGH QUALITY SETTINGS) ================== */
-recordBtn.onclick = async () => {
-    if (isRecording) return;
-    isRecording = true;
-
-    await ensureAudioContext();
-    recordedChunks = [];
-
-    /* 1. మైక్ మాత్రమే రికార్డ్ కోసం */
-    const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-            channelCount: 1,
-            sampleRate: 48000,
-            sampleSize: 16,
-            latency: 0
-        },
-        video: false // వీడియో లేదు
-    });
+        <div class="controls">
+            <button id="playBtn">▶ Play Original</button>
+            <button id="recordBtn">🎙 Record Voice</button>
+            <button id="stopBtn" class="hidden">⏹ Stop</button>
+        </div>
+        
+        <!-- HIDDEN AUDIO ELEMENTS -->
+        <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%" preload="auto"></audio>
+        <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%" preload="auto"></audio>
+        
+        <!-- HIDDEN CANVAS FOR RECORDING -->
+        <canvas id="recordingCanvas" class="hidden"></canvas>
+    </div>
     
-    micSource = audioContext.createMediaStreamSource(micStream);
+    <div class="final-screen" id="finalScreen">
+        <div class="final-title">🎉 Recording Complete!</div>
+        <div class="controls">
+            <button id="playRecordingBtn">▶ Play Your Voice</button>
+            <a id="downloadRecordingBtn" download>
+                <button>⬇ Download Audio</button>
+            </a>
+            <button id="newRecordingBtn">🔄 New Recording</button>
+        </div>
+    </div>
 
-    /* 2. కేవలం మైక్ మాత్రమే మిక్సింగ్ డెస్టినేషన్కు కనెక్ట్ చేయండి */
-    const destination = audioContext.createMediaStreamDestination();
-    
-    // ✅ VOICE VOLUME ADJUSTMENT
-    const micGain = audioContext.createGain();
-    micGain.gain.value = 1.5;
-    micSource.connect(micGain);
-    micGain.connect(destination);
-
-    // Set canvas to 9:16 mobile aspect ratio
-    canvas.width = 1080;
-    canvas.height = 1920;
-    drawCanvas();
-
-    /* 3. కేవలం canvas వీడియో + మైక్ ఆడియో మాత్రమే రికార్డ్ */
-    const canvasStream = canvas.captureStream(30);
-    const videoTrack = canvasStream.getVideoTracks()[0];
-    const audioTrack = destination.stream.getAudioTracks()[0];
-
-    const mixedStream = new MediaStream([videoTrack, audioTrack]);
-
-    // ✅ HIGH QUALITY RECORDER SETTINGS
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
-        ? 'video/webm;codecs=vp9,opus'
-        : 'video/webm';
-    
-    mediaRecorder = new MediaRecorder(mixedStream, {
-        mimeType: mimeType,
-        videoBitsPerSecond: 2500000,
-        audioBitsPerSecond: 128000
-    });
-    
-    mediaRecorder.ondataavailable = e => e.data.size && recordedChunks.push(e.data);
-
-    mediaRecorder.onstop = () => {
-        cancelAnimationFrame(canvasRafId);
-
-        const blob = new Blob(recordedChunks, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-
-        if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
-        lastRecordingURL = url;
-
-        finalBg.src = mainBg.src;
-        finalDiv.style.display = "flex";
-
-        // ✅ DOWNLOAD WITH SONG NAME
-        const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = songName + "_recording.webm";
-        downloadRecordingBtn.href = url;
-        downloadRecordingBtn.download = fileName;
-
-        playRecordingBtn.onclick = () => {
-            if (!isPlayingRecording) {
-                playRecordingAudio = new Audio(url);
-                playRecordingAudio.play();
-                playRecordingBtn.innerText = "⏹ Stop";
-                isPlayingRecording = true;
-                playRecordingAudio.onended = () => {
-                    playRecordingBtn.innerText = "▶ Play";
-                    isPlayingRecording = false;
-                };
-            } else {
-                playRecordingAudio.pause();
-                playRecordingAudio.currentTime = 0;
-                playRecordingBtn.innerText = "▶ Play";
-                isPlayingRecording = false;
+    <script>
+        /* ================== GLOBAL VARIABLES ================== */
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let audioContext = null;
+        let micSource = null;
+        let gainNode = null;
+        let canvasRafId = null;
+        
+        let isRecording = false;
+        let isPlayingRecording = false;
+        let isPreparing = false;
+        let lastRecordingURL = null;
+        let playRecordingAudio = null;
+        
+        /* ================== DOM ELEMENTS ================== */
+        const statusText = document.getElementById('status');
+        const playBtn = document.getElementById('playBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const playRecordingBtn = document.getElementById('playRecordingBtn');
+        const downloadRecordingBtn = document.getElementById('downloadRecordingBtn');
+        const newRecordingBtn = document.getElementById('newRecordingBtn');
+        
+        const originalAudio = document.getElementById('originalAudio');
+        const accompanimentAudio = document.getElementById('accompaniment');
+        const lyricsImg = document.getElementById('lyricsImg');
+        
+        const mainContainer = document.getElementById('mainContainer');
+        const finalScreen = document.getElementById('finalScreen');
+        const canvas = document.getElementById('recordingCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        /* ================== AUDIO CONTEXT SETUP ================== */
+        async function ensureAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
-        };
-    };
-
-    mediaRecorder.start();
-
-    /* 4. రికార్డింగ్ సమయంలో original song మాత్రమే ప్లే చేయండి */
-    originalAudio.currentTime = 0;
-    await safePlay(originalAudio);
-    
-    // Accompaniment ఆడియోను ప్లే చేయకూడదు
-    accompanimentAudio.pause();
-    accompanimentAudio.currentTime = 0;
-
-    playBtn.style.display = "none";
-    recordBtn.style.display = "none";
-    stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording (Voice Only)...";
-    
-    // ✅ AUTOMATIC STOP WHEN SONG ENDS
-    originalAudio.onended = () => {
-        if (isRecording) {
-            setTimeout(() => {
-                if (isRecording) {
-                    stopRecording();
-                }
-            }, 500);
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            return audioContext;
         }
-    };
-};
-
-/* ================== STOP RECORDING FUNCTION ================== */
-function stopRecording() {
-    if (!isRecording) return;
-    isRecording = false;
-
-    try { mediaRecorder.stop(); } catch {}
-    try { micSource.disconnect(); } catch {}
-
-    // Original songను మాత్రమే స్టాప్ చేయండి
-    originalAudio.pause();
-    originalAudio.currentTime = 0;
-
-    // Accompaniment ఏమీ ప్లే కాలేదు కాబట్టి దాన్ని స్టాప్ చేయనవసరం లేదు
-    accompanimentAudio.pause();
-    accompanimentAudio.currentTime = 0;
-
-    stopBtn.style.display = "none";
-    status.innerText = "⏹ Processing...";
-    
-    // Clear the ended events
-    originalAudio.onended = null;
-};
-/* ================== STOP BUTTON CLICK ================== */
-stopBtn.onclick = stopRecording;
-
-/* ================== NEW RECORDING ================== */
-newRecordingBtn.onclick = () => {
-    finalDiv.style.display = "none";
-
-    recordedChunks = [];
-    isRecording = false;
-    isPlayingRecording = false;
-
-    originalAudio.pause();
-    accompanimentAudio.pause();
-    originalAudio.currentTime = 0;
-    accompanimentAudio.currentTime = 0;
-
-    if (playRecordingAudio) {
-        playRecordingAudio.pause();
-        playRecordingAudio = null;
-    }
-
-    playBtn.style.display = "inline-block";
-    recordBtn.style.display = "inline-block";
-    stopBtn.style.display = "none";
-    playBtn.innerText = "▶ Play";
-    status.innerText = "Ready 🎤";
-    
-    // Clear all event listeners
-    originalAudio.onended = null;
-    accompanimentAudio.onended = null;
-};
-
-/* ================== INITIALIZE ================== */
-// Set up initial event listeners for song completion
-originalAudio.onloadedmetadata = function() {
-    console.log("Song duration:", originalAudio.duration, "seconds");
-};
-
-// Reset button when audio ends naturally
-originalAudio.addEventListener('ended', function() {
-    if (playBtn.innerText === "⏹ Stop") {
-        playBtn.innerText = "▶ Play";
-        status.innerText = "✅ Song completed";
         
-        setTimeout(() => {
-            if (status.innerText === "✅ Song completed") {
-                status.innerText = "Ready 🎤";
+        /* ================== PLAY ORIGINAL SONG ================== */
+        playBtn.onclick = async function() {
+            await ensureAudioContext();
+            
+            if (originalAudio.paused) {
+                // Start playing
+                originalAudio.currentTime = 0;
+                try {
+                    await originalAudio.play();
+                    playBtn.textContent = '⏹ Stop';
+                    statusText.textContent = '🎵 Playing original song...';
+                    
+                    // Auto-stop when song ends
+                    originalAudio.onended = function() {
+                        playBtn.textContent = '▶ Play Original';
+                        statusText.textContent = '✅ Song completed';
+                        
+                        setTimeout(() => {
+                            if (statusText.textContent === '✅ Song completed') {
+                                statusText.textContent = 'Ready 🎤 - Tap Record to sing';
+                            }
+                        }, 1500);
+                    };
+                } catch (error) {
+                    console.error('Play error:', error);
+                    statusText.textContent = '❌ Playback failed';
+                }
+            } else {
+                // Stop playing
+                originalAudio.pause();
+                originalAudio.currentTime = 0;
+                playBtn.textContent = '▶ Play Original';
+                statusText.textContent = '⏹ Stopped';
+                originalAudio.onended = null;
             }
-        }, 1500);
-    }
-});
-
-// Also reset when accompaniment ends (for recording)
-accompanimentAudio.addEventListener('ended', function() {
-    if (playBtn.innerText === "⏹ Stop" && !isRecording) {
-        playBtn.innerText = "▶ Play";
-        status.innerText = "✅ Song completed";
+        };
         
-        setTimeout(() => {
-            if (status.innerText === "✅ Song completed") {
-                status.innerText = "Ready 🎤";
+        /* ================== PREPARE RECORDING (VOICE ONLY) ================== */
+        async function prepareRecording() {
+            if (isPreparing) return false;
+            isPreparing = true;
+            statusText.textContent = '🎤 Preparing microphone...';
+            
+            try {
+                // 1. Get microphone only (NO accompaniment in recording)
+                const micStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                // 2. Setup audio context
+                await ensureAudioContext();
+                
+                // 3. Create audio nodes for MIC ONLY
+                micSource = audioContext.createMediaStreamSource(micStream);
+                gainNode = audioContext.createGain();
+                gainNode.gain.value = 2.0; // Voice volume boost
+                
+                const destination = audioContext.createMediaStreamDestination();
+                micSource.connect(gainNode);
+                gainNode.connect(destination);
+                
+                // 4. Setup canvas for video recording (silent video)
+                canvas.width = 1080;
+                canvas.height = 1920;
+                
+                // 5. Create combined stream (canvas video + mic audio)
+                const canvasStream = canvas.captureStream(30);
+                const micAudioStream = destination.stream;
+                
+                const combinedStream = new MediaStream([
+                    ...canvasStream.getVideoTracks(),
+                    ...micAudioStream.getAudioTracks()
+                ]);
+                
+                // 6. Setup MediaRecorder for MIC ONLY recording
+                mediaRecorder = new MediaRecorder(combinedStream, {
+                    mimeType: 'video/webm;codecs=vp9,opus'
+                });
+                
+                recordedChunks = [];
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        recordedChunks.push(e.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = processRecording;
+                
+                isPreparing = false;
+                statusText.textContent = '✅ Ready! Tap Record to sing';
+                return true;
+                
+            } catch (error) {
+                console.error('Preparation error:', error);
+                statusText.textContent = '❌ Error: ' + error.message;
+                isPreparing = false;
+                return false;
             }
-        }, 1500);
-    }
-});
-</script>
+        }
+        
+        /* ================== DRAW CANVAS ================== */
+        function drawCanvas() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Calculate image dimensions
+            const imgRatio = lyricsImg.naturalWidth / lyricsImg.naturalHeight;
+            const canvasRatio = canvas.width / canvas.height;
+            
+            let drawWidth, drawHeight, drawX, drawY;
+            
+            if (imgRatio > canvasRatio) {
+                drawWidth = canvas.width;
+                drawHeight = canvas.width / imgRatio;
+                drawX = 0;
+                drawY = (canvas.height - drawHeight) / 2;
+            } else {
+                drawHeight = canvas.height;
+                drawWidth = canvas.height * imgRatio;
+                drawX = (canvas.width - drawWidth) / 2;
+                drawY = 0;
+            }
+            
+            // Draw image
+            ctx.drawImage(lyricsImg, drawX, drawY, drawWidth, drawHeight);
+            
+            // Continue animation
+            canvasRafId = requestAnimationFrame(drawCanvas);
+        }
+        
+        /* ================== START RECORDING (VOICE ONLY) ================== */
+        async function startRecording() {
+            if (isRecording || isPreparing) return;
+            
+            try {
+                await ensureAudioContext();
+                
+                // Start drawing on canvas
+                drawCanvas();
+                
+                // Start media recorder (VOICE ONLY)
+                mediaRecorder.start();
+                
+                // Play accompaniment for user to sing along (NOT recorded)
+                accompanimentAudio.currentTime = 0;
+                try {
+                    await accompanimentAudio.play();
+                } catch (e) {
+                    console.log("Accompaniment play failed:", e);
+                }
+                
+                // Update UI
+                isRecording = true;
+                playBtn.classList.add('hidden');
+                recordBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                recordBtn.classList.add('recording');
+                statusText.textContent = '🎤 Recording... Sing along with the music!';
+                
+                // Auto-stop when song ends
+                const songDuration = accompanimentAudio.duration * 1000;
+                setTimeout(() => {
+                    if (isRecording) {
+                        stopRecording();
+                    }
+                }, songDuration + 1000);
+                
+            } catch (error) {
+                console.error('Start recording error:', error);
+                statusText.textContent = '❌ Failed to start recording';
+            }
+        }
+        
+        /* ================== STOP RECORDING ================== */
+        function stopRecording() {
+            if (!isRecording) return;
+            
+            try {
+                // Stop media recorder
+                mediaRecorder.stop();
+                
+                // Stop accompaniment playback
+                accompanimentAudio.pause();
+                accompanimentAudio.currentTime = 0;
+                
+                // Stop canvas drawing
+                cancelAnimationFrame(canvasRafId);
+                
+                // Update UI
+                isRecording = false;
+                statusText.textContent = '⏹ Processing recording...';
+                
+            } catch (error) {
+                console.error('Stop recording error:', error);
+            }
+        }
+        
+        /* ================== PROCESS RECORDING (VOICE ONLY) ================== */
+        function processRecording() {
+            try {
+                // Create blob from recorded chunks (VOICE ONLY)
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                
+                // Clean up previous URL
+                if (lastRecordingURL) {
+                    URL.revokeObjectURL(lastRecordingURL);
+                }
+                lastRecordingURL = url;
+                
+                // Setup download link for VOICE ONLY
+                const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
+                const fileName = songName + '_voice_only.webm';
+                downloadRecordingBtn.href = url;
+                downloadRecordingBtn.download = fileName;
+                
+                // Show final screen
+                mainContainer.style.display = 'none';
+                finalScreen.style.display = 'flex';
+                
+                // Setup playback for VOICE ONLY recording
+                playRecordingBtn.onclick = function() {
+                    if (!isPlayingRecording) {
+                        if (playRecordingAudio) {
+                            playRecordingAudio.pause();
+                            playRecordingAudio = null;
+                        }
+                        playRecordingAudio = new Audio(url);
+                        playRecordingAudio.play();
+                        playRecordingBtn.textContent = '⏹ Stop';
+                        isPlayingRecording = true;
+                        
+                        playRecordingAudio.onended = function() {
+                            playRecordingBtn.textContent = '▶ Play Your Voice';
+                            isPlayingRecording = false;
+                        };
+                    } else {
+                        if (playRecordingAudio) {
+                            playRecordingAudio.pause();
+                            playRecordingAudio.currentTime = 0;
+                        }
+                        playRecordingBtn.textContent = '▶ Play Your Voice';
+                        isPlayingRecording = false;
+                    }
+                };
+                
+            } catch (error) {
+                console.error('Process recording error:', error);
+                statusText.textContent = '❌ Failed to process recording';
+            }
+        }
+        
+        /* ================== EVENT LISTENERS ================== */
+        // Record button
+        recordBtn.addEventListener('click', async function() {
+            if (isRecording) return;
+            
+            if (!mediaRecorder) {
+                // First time - prepare
+                statusText.textContent = '🎤 Setting up recording...';
+                const prepared = await prepareRecording();
+                if (!prepared) return;
+                
+                // Start recording after preparation
+                setTimeout(() => startRecording(), 300);
+            } else {
+                // Already prepared - start directly
+                startRecording();
+            }
+        });
+        
+        // Stop button
+        stopBtn.addEventListener('click', stopRecording);
+        
+        // New recording button
+        newRecordingBtn.addEventListener('click', function() {
+            // Hide final screen
+            finalScreen.style.display = 'none';
+            mainContainer.style.display = 'flex';
+            
+            // Cleanup
+            if (playRecordingAudio) {
+                playRecordingAudio.pause();
+                playRecordingAudio = null;
+            }
+            
+            // Reset audio
+            originalAudio.pause();
+            accompanimentAudio.pause();
+            originalAudio.currentTime = 0;
+            accompanimentAudio.currentTime = 0;
+            
+            // Reset UI
+            playBtn.classList.remove('hidden');
+            recordBtn.classList.remove('hidden');
+            stopBtn.classList.add('hidden');
+            recordBtn.classList.remove('recording');
+            playBtn.textContent = '▶ Play Original';
+            recordBtn.textContent = '🎙 Record Voice';
+            statusText.textContent = 'Ready 🎤 - Tap Record to sing';
+            
+            // Reset state
+            mediaRecorder = null;
+            recordedChunks = [];
+            isRecording = false;
+            isPlayingRecording = false;
+            isPreparing = false;
+        });
+        
+        /* ================== MOBILE AUDIO FIXES ================== */
+        // Touch/click to activate audio
+        document.body.addEventListener('touchstart', async function() {
+            await ensureAudioContext();
+        }, { once: true });
+        
+        document.body.addEventListener('click', async function() {
+            await ensureAudioContext();
+        }, { once: true });
+        
+        // Handle page visibility
+        document.addEventListener('visibilitychange', async function() {
+            if (document.visibilityState === 'visible') {
+                await ensureAudioContext();
+            }
+        });
+        
+        /* ================== INITIALIZE ================== */
+        window.addEventListener('load', function() {
+            statusText.textContent = 'Loading...';
+            
+            // Ensure audio context on first interaction
+            document.addEventListener('click', async function initAudio() {
+                await ensureAudioContext();
+                document.removeEventListener('click', initAudio);
+            }, { once: true });
+        });
+    </script>
 </body>
 </html>
 """
