@@ -1445,7 +1445,7 @@ button {
     box-shadow: 0px 3px 15px rgba(255,0,128,0.4); 
     cursor: pointer; 
     min-width: 120px;
-    color: white !important;
+    color: #FF0000 !important;
     background: rgba(255, 0, 0, 0.1);
     border: none;
 }
