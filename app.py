@@ -1646,7 +1646,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD (WITH HIGH QUALITY SETTINGS) ================== */
+/* ================== RECORD (WITH NOISE SUPPRESSION) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     isRecording = true;
@@ -1654,20 +1654,62 @@ recordBtn.onclick = async () => {
     await ensureAudioContext();
     recordedChunks = [];
 
-    /* MIC - WITH OPTIMIZED SETTINGS FOR CLARITY */
+    /* MIC - WITH MAXIMUM NOISE SUPPRESSION */
     const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-            echoCancellation: false,  // Background noise filter తొలగించు
-            noiseSuppression: false,  // శబ్ద నిరోధకం ఆపు (voice natural ga untundi)
-            autoGainControl: false,   // ఆటోమేటిక్ వాల్యూమ్ కంట్రోల్ ఆపు (distortion తగ్గించు)
-            channelCount: 1,          // Mono recording (file size తగ్గించు)
-            sampleRate: 48000,        // High quality sample rate
-            sampleSize: 16,           // Better audio resolution
-            latency: 0                // Minimum latency
+            echoCancellation: true,   // ✅ BACKGROUND NOISE REDUCTION
+            noiseSuppression: true,   // ✅ VOICE CLEANUP ENABLED
+            autoGainControl: false,   // Avoid distortion
+            channelCount: 1,
+            sampleRate: 44100,
+            sampleSize: 16,
+            latency: 0
         }
     });
     
     micSource = audioContext.createMediaStreamSource(micStream);
+
+    // ✅ ADVANCED NOISE FILTER
+    const filterNode = audioContext.createBiquadFilter();
+    filterNode.type = "bandpass";
+    filterNode.frequency.value = 300;  // Focus on voice frequencies
+    filterNode.Q.value = 1;
+    
+    // ✅ DYNAMIC NOISE GATE
+    const noiseGate = audioContext.createGain();
+    noiseGate.gain.value = 0;
+    
+    // Voice detection
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    
+    function detectVoice() {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+        }
+        const average = sum / dataArray.length;
+        
+        // Only pass audio when voice is detected
+        if (average > 20) { // Voice threshold
+            noiseGate.gain.value = 1.0;
+        } else {
+            noiseGate.gain.value = 0.01; // Reduce background noise
+        }
+    }
+    
+    // Connect audio chain with noise reduction
+    micSource.connect(filterNode);
+    filterNode.connect(analyser);
+    filterNode.connect(noiseGate);
+    
+    // ✅ VOICE BOOSTER
+    const voiceBooster = audioContext.createGain();
+    voiceBooster.gain.value = 2.0; // Double the voice volume
+    
+    noiseGate.connect(voiceBooster);
 
     /* ACCOMPANIMENT */
     const accRes = await fetch(accompanimentAudio.src);
@@ -1679,21 +1721,21 @@ recordBtn.onclick = async () => {
 
     const destination = audioContext.createMediaStreamDestination();
     
-    // ✅ VOICE VOLUME ADJUSTMENT (Mic gain control)
-    const micGain = audioContext.createGain();
-    micGain.gain.value = 1.5; // Voice volume increase (1.0 = normal)
-    micSource.connect(micGain);
-    micGain.connect(destination);
+    // Connect processed voice
+    voiceBooster.connect(destination);
     
-    // ✅ ACCOMPANIMENT VOLUME ADJUSTMENT
+    // ✅ ACCOMPANIMENT VOLUME CONTROL
     const accGain = audioContext.createGain();
-    accGain.gain.value = 0.7; // Background music volume decrease
+    accGain.gain.value = 0.6; // Reduce background music
     accSource.connect(accGain);
     accGain.connect(destination);
 
+    // Start voice detection
+    const voiceDetectionInterval = setInterval(detectVoice, 50);
+    
     accSource.start();
 
-    // Set canvas to 9:16 mobile aspect ratio
+    // Set canvas
     canvas.width = 1080;
     canvas.height = 1920;
     drawCanvas();
@@ -1703,7 +1745,7 @@ recordBtn.onclick = async () => {
         ...destination.stream.getTracks()
     ]);
 
-    // ✅ HIGH QUALITY RECORDER SETTINGS
+    // High quality recording
     const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
         ? 'video/webm;codecs=vp9,opus'
         : 'video/webm';
@@ -1711,13 +1753,14 @@ recordBtn.onclick = async () => {
     mediaRecorder = new MediaRecorder(stream, {
         mimeType: mimeType,
         videoBitsPerSecond: 2500000,
-        audioBitsPerSecond: 128000
+        audioBitsPerSecond: 192000 // Higher audio quality
     });
     
     mediaRecorder.ondataavailable = e => e.data.size && recordedChunks.push(e.data);
 
     mediaRecorder.onstop = () => {
         cancelAnimationFrame(canvasRafId);
+        clearInterval(voiceDetectionInterval); // Cleanup
 
         const blob = new Blob(recordedChunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
@@ -1728,7 +1771,7 @@ recordBtn.onclick = async () => {
         finalBg.src = mainBg.src;
         finalDiv.style.display = "flex";
 
-        // ✅ DOWNLOAD WITH SONG NAME
+        // Download with song name
         const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
         const fileName = songName + "_recording.webm";
         downloadRecordingBtn.href = url;
@@ -1763,9 +1806,9 @@ recordBtn.onclick = async () => {
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Recording (High Quality)...";
+    status.innerText = "🎙 Recording (Noise Suppressed)...";
     
-    // ✅ AUTOMATIC STOP WHEN SONG ENDS
+    // Auto-stop
     originalAudio.onended = () => {
         if (isRecording) {
             setTimeout(() => {
@@ -1786,7 +1829,6 @@ recordBtn.onclick = async () => {
         }
     };
 };
-
 /* ================== STOP RECORDING FUNCTION ================== */
 function stopRecording() {
     if (!isRecording) return;
