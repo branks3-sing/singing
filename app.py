@@ -1,4 +1,4 @@
-nakku ee below code lo song play button click cheste play ayyi stop button vastundhi kadha naku adhi song anedhi complete ga paly ayyina taruvatha naku adi automatic ga stop ayyi play ani ravali like sync like record lo ela ayyite work avvuthundho ala kavali give me full updated working code based on my code remaing working em distrub cheyakunda send chey
+
 import streamlit as st
 import os
 import base64
