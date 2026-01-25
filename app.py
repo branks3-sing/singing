@@ -1437,20 +1437,56 @@ body {
     z-index: 30; 
 }
 button { 
-     
-    padding: 8px 20px; 
-    border-radius: 25px; 
-    font-size: 13px; 
-    margin: 4px; 
-    box-shadow: 0px 3px 15px rgba(255,0,128,0.4); 
-    cursor: pointer; 
-    min-width: 120px;
-    color: #FF0000 !important;
-    background: rgba(255, 0, 0, 0.1);
-    border: none;
+    background: #FF0000 !important;
+    border: none !important;
+    color: white !important;
+    padding: 12px 24px !important;
+    border-radius: 50px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    margin: 8px !important;
+    cursor: pointer !important;
+    min-width: 140px !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3) !important;
+    letter-spacing: 0.5px !important;
 }
+
+button:hover { 
+    background: #CC0000 !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 16px rgba(255, 0, 0, 0.4) !important;
+}
+
 button:active { 
-    transform: scale(0.95); 
+    transform: scale(0.98) !important; 
+}
+
+/* Play button specific */
+#playBtn {
+    background: #FF0000 !important;
+}
+
+#playBtn:hover {
+    background: #CC0000 !important;
+}
+
+/* Record button specific */
+#recordBtn {
+    background: #FF0000 !important;
+}
+
+#recordBtn:hover {
+    background: #CC0000 !important;
+}
+
+/* Stop button specific */
+#stopBtn {
+    background: #333333 !important;
+}
+
+#stopBtn:hover {
+    background: #555555 !important;
 }
 .final-output { 
     position: fixed !important; 
