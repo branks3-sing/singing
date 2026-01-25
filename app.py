@@ -1437,9 +1437,7 @@ body {
     z-index: 30; 
 }
 button { 
-    background: linear-gradient(135deg, #ff0066, #ff66cc); 
-    border: none; 
-    color: white; 
+     
     padding: 8px 20px; 
     border-radius: 25px; 
     font-size: 13px; 
@@ -1447,6 +1445,9 @@ button {
     box-shadow: 0px 3px 15px rgba(255,0,128,0.4); 
     cursor: pointer; 
     min-width: 120px;
+    color: white !important;
+    background: rgba(255, 0, 0, 0.1);
+    border: none;
 }
 button:active { 
     transform: scale(0.95); 
