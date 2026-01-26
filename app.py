@@ -915,7 +915,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         with col3:
             uploaded_lyrics_image = st.file_uploader(
                 "Lyrics Image (_lyrics_bg.jpg / .png)",
-                type=["jpg", "jpeg", "png"],
+                type=["jpg", "jpeg", ".png"],
                 key="lyrics_upload"
             )
 
@@ -1360,7 +1360,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE - FIXED BUTTON ISSUES
+    # ✅ UPDATED KARAOKE TEMPLATE - FIXED ORIGINAL SONG PLAYBACK DURING RECORDING
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1605,7 +1605,7 @@ playBtn.onclick = async () => {
         try {
             await originalAudio.play();
             playBtn.innerText = "⏹ Stop Song";
-            status.innerText = "🎵 Playing song...";
+            status.innerText = "🎵 Playing original song...";
             isPlayingSong = true;
         } catch (e) {
             console.log("Play error:", e);
@@ -1654,18 +1654,27 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - VOICE + ACCOMPANIMENT ONLY ================== */
+/* ================== RECORD - ORIGINAL SONG PLAY AVUTHUNDI, BUT RECORDING LO INCLUDE AVVADU ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     
     try {
         await ensureAudioContext();
         
-        // Stop any current playback
+        // FIRST: Stop any current playback
         originalAudio.pause();
         accompanimentAudio.pause();
         originalAudio.currentTime = 0;
         accompanimentAudio.currentTime = 0;
+        
+        // START PLAYING ORIGINAL SONG FOR REFERENCE (USER CAN HEAR IT)
+        // IMPORTANT: This is only for user reference, NOT included in recording
+        try {
+            await originalAudio.play();
+            status.innerText = "🎵 Playing original song (for reference)...";
+        } catch (e) {
+            console.log("Original play error:", e);
+        }
         
         // Get microphone with optimal settings
         const micStream = await navigator.mediaDevices.getUserMedia({ 
@@ -1681,7 +1690,7 @@ recordBtn.onclick = async () => {
         // Create audio sources
         micSource = audioContext.createMediaStreamSource(micStream);
         
-        // Load accompaniment audio
+        // Load accompaniment audio (This will be in recording)
         const accRes = await fetch(accompanimentAudio.src);
         const accBuf = await accRes.arrayBuffer();
         const accDecoded = await audioContext.decodeAudioData(accBuf);
@@ -1699,14 +1708,14 @@ recordBtn.onclick = async () => {
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
         
-        // Connect: Voice + Accompaniment (ONLY THESE TWO)
+        // CONNECT: Voice + Accompaniment ONLY (NO ORIGINAL IN RECORDING)
         micSource.connect(micGain);
         micGain.connect(destination);
         
         accSource.connect(accGain);
         accGain.connect(destination);
         
-        // Start accompaniment playback
+        // Start accompaniment playback (This is in recording)
         accSource.start();
         
         // Set up canvas
@@ -1744,6 +1753,10 @@ recordBtn.onclick = async () => {
         mediaRecorder.onstop = () => {
             cancelAnimationFrame(canvasRafId);
             
+            // Stop original song playback
+            originalAudio.pause();
+            originalAudio.currentTime = 0;
+            
             const blob = new Blob(recordedChunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
             
@@ -1770,10 +1783,12 @@ recordBtn.onclick = async () => {
                     playRecordingAudio.play();
                     playRecordingBtn.innerText = "⏹ Stop Playback";
                     isPlayingRecording = true;
+                    finalStatus.innerText = "Playing recording...";
                     
                     playRecordingAudio.onended = () => {
                         playRecordingBtn.innerText = "▶ Play Recording";
                         isPlayingRecording = false;
+                        finalStatus.innerText = "Recording Complete!";
                     };
                 } else {
                     if (playRecordingAudio) {
@@ -1782,6 +1797,7 @@ recordBtn.onclick = async () => {
                     }
                     playRecordingBtn.innerText = "▶ Play Recording";
                     isPlayingRecording = false;
+                    finalStatus.innerText = "Recording Complete!";
                 }
             };
         };
@@ -1794,7 +1810,7 @@ recordBtn.onclick = async () => {
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording...";
+        status.innerText = "🎙 Recording... (Original song playing for reference)";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
@@ -1827,6 +1843,10 @@ function stopRecording() {
         if (accSource) {
             try { accSource.stop(); } catch {}
         }
+        
+        // Stop original song
+        originalAudio.pause();
+        originalAudio.currentTime = 0;
         
         // Stop canvas drawing
         if (canvasRafId) {
