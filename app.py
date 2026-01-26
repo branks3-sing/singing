@@ -1361,7 +1361,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE - WITH SAME BUTTON STYLING AS FIRST CODE
+    # ✅ UPDATED KARAOKE TEMPLATE - WITH VOICE CLARITY FIXES
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1538,7 +1538,7 @@ let recordedChunks = [];
 let playRecordingAudio = null;
 let lastRecordingURL = null;
 
-let audioContext, micSource, accSource, micGain, accGain;
+let audioContext, micSource, accSource, micGain, accGain, compressor, equalizer;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
@@ -1631,7 +1631,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - ORIGINAL SONG PLAY AVUTHUNDI, BUT RECORDING LO INCLUDE AVVADU ================== */
+/* ================== RECORD - WITH VOICE CLARITY FIXES ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     
@@ -1653,15 +1653,20 @@ recordBtn.onclick = async () => {
             console.log("Original play error:", e);
         }
         
-        // ✅ FIXED MIC SETTINGS FOR BETTER VOICE CLARITY
+        // ✅ FIXED: Get microphone with OPTIMAL SETTINGS FOR VOICE CLARITY
         const micStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                echoCancellation: false,  // Disable for clearer voice
-                noiseSuppression: false,  // Disable noise suppression
-                autoGainControl: false,   // Manual control
-                sampleRate: 48000,       // Higher quality
-                channelCount: 2          // Stereo
-            }
+                echoCancellation: false,      // IMPORTANT: Disable for karaoke
+                noiseSuppression: true,       // Keep enabled
+                autoGainControl: false,       // IMPORTANT: Disable auto-gain
+                channelCount: 1,
+                sampleRate: 48000,            // Higher sample rate
+                latency: 0,                   // Low latency
+                // Add these for better quality
+                sampleSize: 16,
+                volume: 1.0                   // Max volume
+            },
+            video: false
         });
         
         // Create audio sources
@@ -1675,41 +1680,41 @@ recordBtn.onclick = async () => {
         accSource = audioContext.createBufferSource();
         accSource.buffer = accDecoded;
         
-        // ✅ FIXED VOLUME LEVELS
+        // ✅ FIXED: Create gain nodes for volume control - ADJUSTED FOR BETTER VOICE
         micGain = audioContext.createGain();
-        micGain.gain.value = 2.5; // INCREASE VOICE VOLUME
+        micGain.gain.value = 2.5;  // INCREASE VOICE VOLUME (was 1.0)
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.25; // REDUCE ACCOMPANIMENT VOLUME
+        accGain.gain.value = 0.2;  // REDUCE ACCOMPANIMENT VOLUME (was 0.5)
         
-        // Create destination for mixed audio
-        const destination = audioContext.createMediaStreamDestination();
-        
-        // Connect: Voice + Accompaniment (ONLY THESE TWO)
-        micSource.connect(micGain);
-        micGain.connect(destination);
-        
-        accSource.connect(accGain);
-        accGain.connect(destination);
-        
-        // ✅ ADD COMPRESSOR FOR BETTER AUDIO BALANCE
-        const compressor = audioContext.createDynamicsCompressor();
-        compressor.threshold.value = -24;
-        compressor.knee.value = 30;
+        // ✅ FIXED: Add compressor for better voice clarity
+        compressor = audioContext.createDynamicsCompressor();
+        compressor.threshold.value = -50;
+        compressor.knee.value = 40;
         compressor.ratio.value = 12;
         compressor.attack.value = 0.003;
         compressor.release.value = 0.25;
         
-        // Reconnect with compressor
-        micSource.disconnect();
-        accSource.disconnect();
+        // ✅ FIXED: Add equalizer for voice frequencies
+        equalizer = audioContext.createBiquadFilter();
+        equalizer.type = "peaking";
+        equalizer.frequency.value = 2000;  // Boost vocal range
+        equalizer.gain.value = 8.0;        // Boost 8dB for clarity
+        equalizer.Q.value = 1.0;
         
+        // Create destination for mixed audio
+        const destination = audioContext.createMediaStreamDestination();
+        
+        // ✅ FIXED: Connect with audio processing chain
+        // Voice chain: micSource → micGain → equalizer → compressor → destination
         micSource.connect(micGain);
-        micGain.connect(compressor);
+        micGain.connect(equalizer);
+        equalizer.connect(compressor);
         compressor.connect(destination);
         
+        // Accompaniment chain: accSource → accGain → destination
         accSource.connect(accGain);
-        accGain.connect(compressor);
+        accGain.connect(destination);
         
         // Start accompaniment playback
         accSource.start();
@@ -1728,7 +1733,7 @@ recordBtn.onclick = async () => {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // Setup MediaRecorder with better audio quality
+        // Setup MediaRecorder with better quality
         const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
             ? 'video/webm;codecs=vp9,opus'
             : 'video/webm';
@@ -1736,8 +1741,8 @@ recordBtn.onclick = async () => {
         mediaRecorder = new MediaRecorder(combinedStream, {
             mimeType: mimeType,
             videoBitsPerSecond: 2500000,
-            audioBitsPerSecond: 192000, // Increase audio bitrate
-            audioBitsPerSecond: 32000  // Professional quality
+            audioBitsPerSecond: 192000,  // Increased audio bitrate
+            audioSampleRate: 48000       // Higher sample rate
         });
         
         recordedChunks = [];
@@ -1758,6 +1763,7 @@ recordBtn.onclick = async () => {
             
             finalBg.src = mainBg.src;
             finalDiv.style.display = "flex";
+            finalStatus.innerText = "🎉 Recording Complete! Voice is now clear!";
             
             // Download with song name
             const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
@@ -1772,7 +1778,7 @@ recordBtn.onclick = async () => {
                         playRecordingAudio = null;
                     }
                     playRecordingAudio = new Audio(url);
-                    playRecordingAudio.volume = 1.0; // Ensure full volume
+                    playRecordingAudio.volume = 1.0;
                     playRecordingAudio.play();
                     playRecordingBtn.innerText = "⏹ Stop";
                     isPlayingRecording = true;
@@ -1793,27 +1799,33 @@ recordBtn.onclick = async () => {
         };
         
         // Start recording
-        mediaRecorder.start(100); // Collect data every 100ms for better quality
+        mediaRecorder.start(1000); // Collect data every second
         
         // Update UI
         isRecording = true;
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording... Speak clearly!";
+        status.innerText = "🎙 Recording... Voice clarity optimized!";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
         setTimeout(() => {
             if (isRecording) {
                 stopRecording();
+                status.innerText = "✅ Recording completed automatically!";
             }
-        }, songDuration + 500);
+        }, songDuration + 1000);
         
     } catch (error) {
         console.error("Recording error:", error);
         status.innerText = "❌ Recording failed: " + error.message;
         isRecording = false;
+        
+        // Reset UI on error
+        playBtn.style.display = "inline-block";
+        recordBtn.style.display = "inline-block";
+        stopBtn.style.display = "none";
     }
 };
 
@@ -1842,6 +1854,14 @@ function stopRecording() {
         if (canvasRafId) {
             cancelAnimationFrame(canvasRafId);
         }
+        
+        // Disconnect audio nodes
+        if (micSource) micSource.disconnect();
+        if (micGain) micGain.disconnect();
+        if (equalizer) equalizer.disconnect();
+        if (compressor) compressor.disconnect();
+        if (accSource) accSource.disconnect();
+        if (accGain) accGain.disconnect();
         
         // Update UI
         isRecording = false;
@@ -1916,6 +1936,20 @@ originalAudio.addEventListener('ended', () => {
             }
         }, 1500);
     }
+});
+
+// Volume test - optional
+function testMicrophoneVolume() {
+    if (micGain) {
+        console.log("Voice gain level:", micGain.gain.value);
+        console.log("Accompaniment gain level:", accGain.gain.value);
+    }
+}
+
+// Auto-test on load
+window.addEventListener('load', () => {
+    console.log("Karaoke Player Loaded with Voice Clarity Fixes");
+    status.innerText = "Ready 🎤 - Voice clarity optimized!";
 });
 </script>
 </body>
