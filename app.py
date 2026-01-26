@@ -1653,14 +1653,14 @@ recordBtn.onclick = async () => {
             console.log("Original play error:", e);
         }
         
-        // Get microphone with optimal settings
+        // ✅ FIXED MIC SETTINGS FOR BETTER VOICE CLARITY
         const micStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-                channelCount: 1,
-                sampleRate: 44100
+                echoCancellation: false,  // Disable for clearer voice
+                noiseSuppression: false,  // Disable noise suppression
+                autoGainControl: false,   // Manual control
+                sampleRate: 48000,       // Higher quality
+                channelCount: 2          // Stereo
             }
         });
         
@@ -1675,12 +1675,12 @@ recordBtn.onclick = async () => {
         accSource = audioContext.createBufferSource();
         accSource.buffer = accDecoded;
         
-        // Create gain nodes for volume control
+        // ✅ FIXED VOLUME LEVELS
         micGain = audioContext.createGain();
-        micGain.gain.value = 1.0; // Increase voice volume
+        micGain.gain.value = 2.5; // INCREASE VOICE VOLUME
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.5; // Slightly reduce accompaniment volume
+        accGain.gain.value = 0.25; // REDUCE ACCOMPANIMENT VOLUME
         
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
@@ -1691,6 +1691,25 @@ recordBtn.onclick = async () => {
         
         accSource.connect(accGain);
         accGain.connect(destination);
+        
+        // ✅ ADD COMPRESSOR FOR BETTER AUDIO BALANCE
+        const compressor = audioContext.createDynamicsCompressor();
+        compressor.threshold.value = -24;
+        compressor.knee.value = 30;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+        
+        // Reconnect with compressor
+        micSource.disconnect();
+        accSource.disconnect();
+        
+        micSource.connect(micGain);
+        micGain.connect(compressor);
+        compressor.connect(destination);
+        
+        accSource.connect(accGain);
+        accGain.connect(compressor);
         
         // Start accompaniment playback
         accSource.start();
@@ -1709,7 +1728,7 @@ recordBtn.onclick = async () => {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // Setup MediaRecorder
+        // Setup MediaRecorder with better audio quality
         const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
             ? 'video/webm;codecs=vp9,opus'
             : 'video/webm';
@@ -1717,7 +1736,8 @@ recordBtn.onclick = async () => {
         mediaRecorder = new MediaRecorder(combinedStream, {
             mimeType: mimeType,
             videoBitsPerSecond: 2500000,
-            audioBitsPerSecond: 128000
+            audioBitsPerSecond: 192000, // Increase audio bitrate
+            audioBitsPerSecond: 32000  // Professional quality
         });
         
         recordedChunks = [];
@@ -1752,6 +1772,7 @@ recordBtn.onclick = async () => {
                         playRecordingAudio = null;
                     }
                     playRecordingAudio = new Audio(url);
+                    playRecordingAudio.volume = 1.0; // Ensure full volume
                     playRecordingAudio.play();
                     playRecordingBtn.innerText = "⏹ Stop";
                     isPlayingRecording = true;
@@ -1772,14 +1793,14 @@ recordBtn.onclick = async () => {
         };
         
         // Start recording
-        mediaRecorder.start();
+        mediaRecorder.start(100); // Collect data every 100ms for better quality
         
         // Update UI
         isRecording = true;
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording...";
+        status.innerText = "🎙 Recording... Speak clearly!";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
