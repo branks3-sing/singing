@@ -59,11 +59,6 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown("""
-    <head>
-        <meta name="google-adsense-account" content="ca-pub-2373888797323762">
-    </head>
-""", unsafe_allow_html=True)
 
 # --------- CONFIG: set your deployed app URL here ----------
 APP_URL = "www.branks3.com"
