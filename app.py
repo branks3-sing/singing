@@ -1647,7 +1647,7 @@ recordBtn.onclick = async () => {
         
         // Create audio element for original song with reduced volume
         const originalAudioClone = new Audio(originalAudio.src);
-        originalAudioClone.volume = 0.3; // 30% volume (0.3 = 30%)
+        originalAudioClone.volume = 0.1; // 30% volume (0.3 = 30%)
         originalAudioClone.loop = false;
         
         // Start playing original song for reference (BUT NOT IN RECORDING)
