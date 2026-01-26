@@ -1523,7 +1523,7 @@ canvas {
       <a id="downloadRecordingBtn" href="#" download>
         <button>⬇ Download</button>
       </a>
-      <button id="newRecordingBtn">🔄 New Recording</button>
+      <button id="newRecordingBtn" class="plain-button">🔄 New Recording</button>
     </div>
   </div>
 </div>
