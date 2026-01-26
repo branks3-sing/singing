@@ -8,10 +8,8 @@ from urllib.parse import unquote, quote
 import time
 import sqlite3
 from datetime import datetime
-import shutil
 from PIL import Image, ImageDraw
 import requests
-from io import BytesIO
 
 # =============== LOGO DOWNLOAD AND LOADING ===============
 def ensure_logo_exists():
@@ -82,6 +80,67 @@ os.makedirs(songs_dir, exist_ok=True)
 os.makedirs(lyrics_dir, exist_ok=True)
 os.makedirs(logo_dir, exist_ok=True)
 os.makedirs(shared_links_dir, exist_ok=True)
+
+# =============== CALLBACK FUNCTIONS FOR BUTTONS ===============
+def open_song_player_callback(song_name):
+    """Callback for opening song player"""
+    st.session_state.selected_song = song_name
+    st.session_state.page = "Song Player"
+    st.query_params["song"] = quote(song_name)
+
+def delete_song_callback(song_name):
+    """Callback for initiating song deletion"""
+    st.session_state.confirm_delete = song_name
+
+def cancel_delete_callback():
+    """Callback for canceling deletion"""
+    st.session_state.confirm_delete = None
+
+def confirm_delete_callback():
+    """Callback for confirming deletion"""
+    song_to_delete = st.session_state.confirm_delete
+    if song_to_delete:
+        # Delete song files
+        delete_song_files(song_to_delete)
+        # Delete metadata
+        delete_metadata(song_to_delete)
+        # Delete shared link if exists
+        delete_shared_link(song_to_delete)
+        
+        # Clear all caches
+        get_song_files_cached.clear()
+        get_shared_links_cached.clear()
+        get_metadata_cached.clear()
+        
+        st.session_state.confirm_delete = None
+        st.rerun()
+
+def share_song_callback(song_name):
+    """Callback for sharing a song"""
+    save_shared_link(
+        song_name,
+        {"shared_by": st.session_state.user, "active": True}
+    )
+    get_shared_links_cached.clear()
+    st.rerun()
+
+def unshare_song_callback(song_name):
+    """Callback for unsharing a song"""
+    delete_shared_link(song_name)
+    get_shared_links_cached.clear()
+    st.rerun()
+
+def back_to_dashboard_callback():
+    """Callback for going back to dashboard"""
+    if st.session_state.role == "admin":
+        st.session_state.page = "Admin Dashboard"
+    elif st.session_state.role == "user":
+        st.session_state.page = "User Dashboard"
+    st.session_state.selected_song = None
+    
+    if "song" in st.query_params:
+        del st.query_params["song"]
+    st.rerun()
 
 # =============== CACHED FUNCTIONS FOR PERFORMANCE ===============
 @st.cache_data(ttl=5)  # Cache for 5 seconds
@@ -358,10 +417,6 @@ def delete_shared_link(song_name):
     # Delete from database
     delete_shared_link_from_db(song_name)
 
-def get_uploaded_songs(show_unshared=False):
-    """Get list of uploaded songs"""
-    return get_song_files_cached()
-
 def delete_song_files(song_name):
     """Delete all files related to a song"""
     try:
@@ -386,11 +441,6 @@ def delete_song_files(song_name):
         if os.path.exists(shared_link_path):
             os.remove(shared_link_path)
         
-        # Clear cache
-        get_song_files_cached.clear()
-        get_shared_links_cached.clear()
-        get_metadata_cached.clear()
-        
         return True
     except Exception as e:
         st.error(f"Error deleting song files: {e}")
@@ -401,15 +451,6 @@ def check_and_create_session_id():
     if 'session_id' not in st.session_state:
         import uuid
         st.session_state.session_id = str(uuid.uuid4())
-
-# =============== FAST SONG PLAYER NAVIGATION ===============
-def open_song_player(song_name):
-    """Fast function to open song player"""
-    st.session_state.selected_song = song_name
-    st.session_state.page = "Song Player"
-    st.query_params["song"] = quote(song_name)
-    save_session_to_db()
-    st.rerun()
 
 # =============== FIXED: QUERY PARAMETER PROCESSING ===============
 def process_query_params():
@@ -428,7 +469,6 @@ def process_query_params():
             st.session_state.role = "guest"
 
         save_session_to_db()
-
 
 # =============== INITIALIZE SESSION ===============
 check_and_create_session_id()
@@ -818,64 +858,14 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         }
     }
     
-    /* DELETE BUTTON STYLING - NO BACKGROUND, NO BORDER, NO PADDING */
-    .delete-button {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        min-width: auto !important;
-        width: auto !important;
-        color: #ff4444 !important;
-        font-size: 20px !important;
-        box-shadow: none !important;
-    }
-    
-    .delete-button:hover {
-        background: transparent !important;
-        color: #ff0000 !important;
-        transform: scale(1.1);
-    }
-    
-    /* SONG LIST ITEMS - CLEAN LAYOUT */
+    /* SONG ITEM ROW LAYOUT */
     .song-item-row {
         display: flex;
         align-items: center;
-        margin-bottom: 4px !important;
-        padding: 0 !important;
-        background: transparent !important;
-    }
-    
-    /* PLAY BUTTON STYLING */
-    .play-button {
-        background: transparent !important;
-        border: none !important;
-        color: #4CAF50 !important;
-        text-align: left !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        width: 100% !important;
-    }
-    
-    .play-button:hover {
-        background: rgba(76, 175, 80, 0.1) !important;
-    }
-    
-    /* SHARE BUTTON STYLING */
-    .share-link-button {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        min-width: auto !important;
-        width: auto !important;
-        color: #667eea !important;
-        font-size: 20px !important;
-    }
-    
-    .share-link-button:hover {
-        color: #764ba2 !important;
-        transform: scale(1.1);
+        margin-bottom: 10px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -984,42 +974,33 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs uploaded yet.")
         else:
-            # Clean layout with minimal styling
-            for idx, s in enumerate(uploaded_songs):
-                # Create columns for each song
+            # Simple list display
+            for idx, song in enumerate(uploaded_songs):
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # Clickable song name - simple text
+                    # Clickable song name
                     if st.button(
-                        f"🎶 {s}",
-                        key=f"song_name_{s}_{idx}",
+                        f"🎶 {song}",
+                        key=f"play_{song}_{idx}",
                         help="Click to play song",
-                        use_container_width=True,
-                        type="secondary"
+                        use_container_width=True
                     ):
-                        open_song_player(s)
+                        open_song_player_callback(song)
+                        st.rerun()
                 
                 with col2:
-                    # Share link icon - using button with emoji
-                    safe_s = quote(s)
+                    # Share link button
+                    safe_s = quote(song)
                     share_url = f"{APP_URL}?song={safe_s}"
-                    if st.button(
-                        "🔗",
-                        key=f"share_icon_{s}_{idx}",
-                        help="Share link"
-                    ):
-                        st.markdown(f"Share URL: {share_url}")
+                    if st.button("🔗", key=f"share_{song}_{idx}", help="Share link"):
+                        st.markdown(f"**Share URL:** {share_url}")
                         st.info("Link copied to clipboard!")
                 
                 with col3:
-                    # Delete button - simple trash icon with minimal styling
-                    if st.button(
-                        "🗑️",
-                        key=f"delete_{s}_{idx}",
-                        help="Delete song"
-                    ):
-                        st.session_state.confirm_delete = s
+                    # Delete button
+                    if st.button("🗑️", key=f"delete_{song}_{idx}", help="Delete song"):
+                        delete_song_callback(song)
                         st.rerun()
             
             # Confirmation dialog for deletion
@@ -1030,29 +1011,11 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 col_confirm, col_cancel = st.columns(2)
                 with col_confirm:
                     if st.button("✅ Yes, Delete", type="primary"):
-                        # Delete song files
-                        if delete_song_files(song_to_delete):
-                            # Delete metadata
-                            delete_metadata(song_to_delete)
-                            # Delete shared link if exists
-                            delete_shared_link(song_to_delete)
-                            
-                            st.success(f"✅ Song '{song_to_delete}' deleted successfully!")
-                            st.session_state.confirm_delete = None
-                            
-                            # Clear all caches
-                            get_song_files_cached.clear()
-                            get_shared_links_cached.clear()
-                            get_metadata_cached.clear()
-                            
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Failed to delete song '{song_to_delete}'")
+                        confirm_delete_callback()
                 
                 with col_cancel:
                     if st.button("❌ Cancel", type="secondary"):
-                        st.session_state.confirm_delete = None
+                        cancel_delete_callback()
                         st.rerun()
 
     # ================= SHARE LINKS =================
@@ -1085,7 +1048,6 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         else:
             # Simple display
             for song in all_songs:
-                # Create columns for each song
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
@@ -1101,22 +1063,10 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     with col_toggle:
                         if is_shared:
                             if st.button("🚫", key=f"unshare_{song}", help="Unshare"):
-                                delete_shared_link(song)
-                                get_shared_links_cached.clear()
-                                st.success(f"✅ {song} unshared!")
-                                time.sleep(0.5)
-                                st.rerun()
+                                unshare_song_callback(song)
                         else:
                             if st.button("🔗", key=f"share_{song}", help="Share"):
-                                save_shared_link(
-                                    song,
-                                    {"shared_by": st.session_state.user, "active": True}
-                                )
-                                get_shared_links_cached.clear()
-                                share_url = f"{APP_URL}?song={safe_song}"
-                                st.success(f"✅ {song} shared!\n{share_url}")
-                                time.sleep(0.5)
-                                st.rerun()
+                                share_song_callback(song)
                     
                     with col_action:
                         if is_shared:
@@ -1187,25 +1137,6 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             padding: 8px !important;
         }
     }
-    
-    /* CLICKABLE SONG NAMES - NO BACKGROUND, NO BORDERS */
-    .clickable-song {
-        cursor: pointer;
-        padding: 12px 8px;
-        transition: all 0.2s ease;
-        border-radius: 0px;
-        background: transparent !important;
-        border: none !important;
-        text-align: left;
-        width: 100%;
-        display: block;
-        margin: 0 !important;
-    }
-    
-    .clickable-song:hover {
-        background: rgba(255, 0, 102, 0.1) !important;
-        transform: translateX(5px);
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1270,7 +1201,8 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
                 use_container_width=True,
                 type="secondary"
             ):
-                open_song_player(song)
+                open_song_player_callback(song)
+                st.rerun()
 
 # =============== SONG PLAYER ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
@@ -1322,12 +1254,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         # Show back button only for logged-in users
         if st.session_state.role in ["admin", "user"]:
             if st.button("Go Back"):
-                if st.session_state.role == "admin":
-                    st.session_state.page = "Admin Dashboard"
-                elif st.session_state.role == "user":
-                    st.session_state.page = "User Dashboard"
-                save_session_to_db()
-                st.rerun()
+                back_to_dashboard_callback()
         st.stop()
 
     # Double-check access permission
@@ -1911,18 +1838,7 @@ originalAudio.addEventListener('ended', () => {
         col1, col2 = st.columns([5, 1])
         with col2:
             if st.button("← Back to Dashboard", key="back_player"):
-                if st.session_state.role == "admin":
-                    st.session_state.page = "Admin Dashboard"
-                    st.session_state.selected_song = None
-                elif st.session_state.role == "user":
-                    st.session_state.page = "User Dashboard"
-                    st.session_state.selected_song = None
-                
-                if "song" in st.query_params:
-                    del st.query_params["song"]
-                
-                save_session_to_db()
-                st.rerun()
+                back_to_dashboard_callback()
     else:
         st.empty()
 
@@ -1936,21 +1852,3 @@ else:
         st.session_state.page = "Login"
     save_session_to_db()
     st.rerun()
-
-# =============== DEBUG INFO (Hidden by default) ===============
-with st.sidebar:
-    if st.session_state.get("role") == "admin":
-        if st.checkbox("Show Debug Info", key="debug_toggle"):
-            st.write("### Debug Info")
-            st.write(f"Page: {st.session_state.get('page')}")
-            st.write(f"User: {st.session_state.get('user')}")
-            st.write(f"Role: {st.session_state.get('role')}")
-            st.write(f"Selected Song: {st.session_state.get('selected_song')}")
-            st.write(f"Query Params: {dict(st.query_params)}")
-            
-            if st.button("Force Reset", key="debug_reset"):
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.session_state.page = "Login"
-                save_session_to_db()
-                st.rerun()
