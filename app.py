@@ -1676,10 +1676,10 @@ recordBtn.onclick = async () => {
         
         // Create gain nodes for volume control
         micGain = audioContext.createGain();
-        micGain.gain.value = 2.0; // Increase voice volume
+        micGain.gain.value = 1.0; // Increase voice volume
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.8; // Slightly reduce accompaniment volume
+        accGain.gain.value = 0.5; // Slightly reduce accompaniment volume
         
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
