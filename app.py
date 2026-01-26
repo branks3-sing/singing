@@ -1645,11 +1645,28 @@ recordBtn.onclick = async () => {
         originalAudio.currentTime = 0;
         accompanimentAudio.currentTime = 0;
         
-        // Start playing original song for reference (BUT NOT IN RECORDING)
+        // ================== ORIGINAL SONG VOLUME REDUCE ==================
+        // Create audio element for original song with reduced volume
+        const originalPlayback = new Audio(originalAudio.src);
+        originalPlayback.preload = "auto";
+        
+        // Connect to audio context with volume control
+        const originalSource = audioContext.createMediaElementSource(originalPlayback);
+        const originalGain = audioContext.createGain();
+        originalGain.gain.value = 0.3; // REDUCE VOLUME TO 30% (adjust 0.3 to your preference)
+        
+        originalSource.connect(originalGain);
+        originalGain.connect(audioContext.destination);
+        
+        // Start playing original song with reduced volume
         try {
-            await originalAudio.play();
+            originalPlayback.currentTime = 0;
+            await originalPlayback.play();
+            status.innerText = "🎵 Playing original song (volume reduced)...";
         } catch (e) {
             console.log("Original play error:", e);
+            // Fallback to normal playback if volume control fails
+            await originalAudio.play();
         }
         
         // Get microphone with optimal settings
@@ -1679,7 +1696,7 @@ recordBtn.onclick = async () => {
         micGain.gain.value = 2.0; // Increase voice volume
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.5; // Slightly reduce accompaniment volume
+        accGain.gain.value = 0.8; // Slightly reduce accompaniment volume
         
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
@@ -1693,6 +1710,9 @@ recordBtn.onclick = async () => {
         
         // Start accompaniment playback
         accSource.start();
+        
+        // Store reference to playback for cleanup
+        let currentOriginalPlayback = originalPlayback;
         
         // Set up canvas
         canvas.width = 1080;
@@ -1728,6 +1748,12 @@ recordBtn.onclick = async () => {
         
         mediaRecorder.onstop = () => {
             cancelAnimationFrame(canvasRafId);
+            
+            // Stop original song playback
+            if (currentOriginalPlayback) {
+                currentOriginalPlayback.pause();
+                currentOriginalPlayback = null;
+            }
             
             const blob = new Blob(recordedChunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
@@ -1778,13 +1804,18 @@ recordBtn.onclick = async () => {
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording...";
+        status.innerText = "🎙 Recording... (Original song playing with reduced volume)";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
         setTimeout(() => {
             if (isRecording) {
                 stopRecording();
+                // Also stop original playback
+                if (currentOriginalPlayback) {
+                    currentOriginalPlayback.pause();
+                    currentOriginalPlayback = null;
+                }
             }
         }, songDuration + 500);
         
@@ -1794,7 +1825,6 @@ recordBtn.onclick = async () => {
         isRecording = false;
     }
 };
-
 /* ================== STOP RECORDING ================== */
 function stopRecording() {
     if (!isRecording) return;
