@@ -1560,10 +1560,6 @@ const playRecordingBtn = document.getElementById("playRecordingBtn");
 const downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
 const newRecordingBtn = document.getElementById("newRecordingBtn");
 
-const originalSource = audioContext.createMediaElementSource(originalAudio);
-const originalGain = audioContext.createGain();
-originalGain.gain.value = 0.25; // 🔽 volume control
-
 originalSource.connect(originalGain);
 originalGain.connect(audioContext.destination);
 
