@@ -1560,6 +1560,13 @@ const playRecordingBtn = document.getElementById("playRecordingBtn");
 const downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
 const newRecordingBtn = document.getElementById("newRecordingBtn");
 
+const originalSource = audioContext.createMediaElementSource(originalAudio);
+const originalGain = audioContext.createGain();
+originalGain.gain.value = 0.25; // 🔽 volume control
+
+originalSource.connect(originalGain);
+originalGain.connect(audioContext.destination);
+
 const canvas = document.getElementById("recordingCanvas");
 const ctx = canvas.getContext("2d");
 
@@ -1647,7 +1654,6 @@ recordBtn.onclick = async () => {
         
         // Start playing original song for reference (BUT NOT IN RECORDING)
         try {
-            originalAudio.volume = 0.25; // 25% volume (reference only)
 
             await originalAudio.play();
         } catch (e) {
