@@ -1670,6 +1670,7 @@ recordBtn.onclick = async () => {
         // START PLAYING ORIGINAL SONG FOR REFERENCE (USER CAN HEAR IT)
         // IMPORTANT: This is only for user reference, NOT included in recording
         try {
+            originalAudio.volume = 0.25;
             await originalAudio.play();
             status.innerText = "🎵 Playing original song (for reference)...";
         } catch (e) {
