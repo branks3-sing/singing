@@ -1630,7 +1630,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - ORIGINAL SONG PLAY AVUTHUNDI, BUT RECORDING LO INCLUDE AVVADU ================== */
+/* ================== RECORD - ORIGINAL SONG VOLUME REDUCE చేయడం ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     
@@ -1645,28 +1645,15 @@ recordBtn.onclick = async () => {
         originalAudio.currentTime = 0;
         accompanimentAudio.currentTime = 0;
         
-        // ================== ORIGINAL SONG VOLUME REDUCE ==================
-        // Create audio element for original song with reduced volume
-        const originalPlayback = new Audio(originalAudio.src);
-        originalPlayback.preload = "auto";
+        // ✅ IMPORTANT: ORIGINAL SONG VOLUME REDUCE చేయడం
+        // 1.0 = full volume, 0.5 = 50% volume, 0.3 = 30% volume, 0 = mute
+        originalAudio.volume = 0.3; // 30% volume కి reduce చేయండి
         
-        // Connect to audio context with volume control
-        const originalSource = audioContext.createMediaElementSource(originalPlayback);
-        const originalGain = audioContext.createGain();
-        originalGain.gain.value = 0.3; // REDUCE VOLUME TO 30% (adjust 0.3 to your preference)
-        
-        originalSource.connect(originalGain);
-        originalGain.connect(audioContext.destination);
-        
-        // Start playing original song with reduced volume
+        // Start playing original song for reference (BUT NOT IN RECORDING)
         try {
-            originalPlayback.currentTime = 0;
-            await originalPlayback.play();
-            status.innerText = "🎵 Playing original song (volume reduced)...";
+            await originalAudio.play();
         } catch (e) {
             console.log("Original play error:", e);
-            // Fallback to normal playback if volume control fails
-            await originalAudio.play();
         }
         
         // Get microphone with optimal settings
@@ -1696,7 +1683,7 @@ recordBtn.onclick = async () => {
         micGain.gain.value = 2.0; // Increase voice volume
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.8; // Slightly reduce accompaniment volume
+        accGain.gain.value = 0.5; // Slightly reduce accompaniment volume
         
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
@@ -1710,9 +1697,6 @@ recordBtn.onclick = async () => {
         
         // Start accompaniment playback
         accSource.start();
-        
-        // Store reference to playback for cleanup
-        let currentOriginalPlayback = originalPlayback;
         
         // Set up canvas
         canvas.width = 1080;
@@ -1749,11 +1733,8 @@ recordBtn.onclick = async () => {
         mediaRecorder.onstop = () => {
             cancelAnimationFrame(canvasRafId);
             
-            // Stop original song playback
-            if (currentOriginalPlayback) {
-                currentOriginalPlayback.pause();
-                currentOriginalPlayback = null;
-            }
+            // ✅ RECORDING STOP అయ్యేసరికి original song volume normal చేయడం
+            originalAudio.volume = 1.0; // 100% volume కి revert చేయండి
             
             const blob = new Blob(recordedChunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
@@ -1804,18 +1785,13 @@ recordBtn.onclick = async () => {
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording... (Original song playing with reduced volume)";
+        status.innerText = "🎙 Recording... (Original song volume reduced)";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
         setTimeout(() => {
             if (isRecording) {
                 stopRecording();
-                // Also stop original playback
-                if (currentOriginalPlayback) {
-                    currentOriginalPlayback.pause();
-                    currentOriginalPlayback = null;
-                }
             }
         }, songDuration + 500);
         
@@ -1825,6 +1801,7 @@ recordBtn.onclick = async () => {
         isRecording = false;
     }
 };
+
 /* ================== STOP RECORDING ================== */
 function stopRecording() {
     if (!isRecording) return;
@@ -1840,10 +1817,12 @@ function stopRecording() {
             try { accSource.stop(); } catch {}
         }
         
-        // Stop audio playback
+        // ✅ IMPORTANT: Stop audio playback మరియు volume normal చేయడం
         originalAudio.pause();
-        accompanimentAudio.pause();
         originalAudio.currentTime = 0;
+        originalAudio.volume = 1.0; // Volume normal చేయండి
+        
+        accompanimentAudio.pause();
         accompanimentAudio.currentTime = 0;
         
         // Stop canvas drawing
@@ -1861,9 +1840,6 @@ function stopRecording() {
     }
 }
 
-/* ================== STOP BUTTON CLICK ================== */
-stopBtn.onclick = stopRecording;
-
 /* ================== NEW RECORDING ================== */
 newRecordingBtn.onclick = () => {
     finalDiv.style.display = "none";
@@ -1874,10 +1850,12 @@ newRecordingBtn.onclick = () => {
         playRecordingAudio = null;
     }
     
-    // Reset audio
+    // ✅ Reset audio మరియు volume normal చేయడం
     originalAudio.pause();
-    accompanimentAudio.pause();
     originalAudio.currentTime = 0;
+    originalAudio.volume = 1.0; // Volume normal చేయండి
+    
+    accompanimentAudio.pause();
     accompanimentAudio.currentTime = 0;
     
     // Reset UI
@@ -1898,7 +1876,6 @@ newRecordingBtn.onclick = () => {
         lastRecordingURL = null;
     }
 };
-
 /* ================== INITIAL SETUP ================== */
 // Handle page visibility
 document.addEventListener('visibilitychange', async () => {
