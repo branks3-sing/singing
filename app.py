@@ -1510,7 +1510,7 @@ canvas {
     <div class="controls">
       <button id="playBtn">▶ Play</button>
       <button id="recordBtn">🎙 Record</button>
-      <button id="stopBtn" style="display:none;">⏹ Stop</button>
+      <button id="stopBtn"">⏹ Stop</button>
     </div>
 </div>
 
