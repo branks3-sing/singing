@@ -1645,6 +1645,11 @@ recordBtn.onclick = async () => {
         originalAudio.currentTime = 0;
         accompanimentAudio.currentTime = 0;
         
+        // Create audio element for original song with reduced volume
+        const originalAudioClone = new Audio(originalAudio.src);
+        originalAudioClone.volume = 0.3; // 30% volume (0.3 = 30%)
+        originalAudioClone.loop = false;
+        
         // Start playing original song for reference (BUT NOT IN RECORDING)
         try {
             await originalAudio.play();
@@ -1728,6 +1733,9 @@ recordBtn.onclick = async () => {
         
         mediaRecorder.onstop = () => {
             cancelAnimationFrame(canvasRafId);
+            
+            // ✅ ORIGINAL SONG STOP CHESTHAM
+            originalAudioClone.pause();
             
             const blob = new Blob(recordedChunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
