@@ -1360,7 +1360,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE - FIXED BUTTON VISIBILITY (ALWAYS VISIBLE)
+    # ✅ UPDATED KARAOKE TEMPLATE - FIXED BUTTON POSITION (ALWAYS VISIBLE)
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1415,45 +1415,46 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       top: 0; 
       left: 0; 
       width: 100vw !important; 
-      height: 75vh !important;  /* REDUCED HEIGHT FOR BETTER BUTTON VISIBILITY */
+      height: 75vh !important; 
       object-fit: contain !important;
       object-position: top !important;
   }
   .controls { 
-      position: fixed !important; /* CHANGED TO FIXED */
-      bottom: 10vh !important; 
+      position: fixed !important; 
+      bottom: 0 !important;
+      left: 0 !important;
       width: 100% !important; 
-      text-align: center !important; 
-      z-index: 9999 !important; /* HIGHEST Z-INDEX */
-      display: flex !important;
-      justify-content: center !important;
-      gap: 10px !important;
-      flex-wrap: wrap !important;
-      background: rgba(0, 0, 0, 0.7) !important; /* BACKGROUND FOR BETTER VISIBILITY */
-      padding: 15px 0 !important;
-      backdrop-filter: blur(5px) !important;
+      text-align: center; 
+      z-index: 9999 !important; 
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 15px 10px !important;
+      background: rgba(0, 0, 0, 0.85) !important;
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
   button { 
-      background: linear-gradient(135deg, #ff0066, #ff66cc) !important; 
-      border: none !important; 
-      color: white !important; 
-      padding: 12px 24px !important; 
-      border-radius: 25px !important; 
-      font-size: 14px !important; 
-      margin: 4px !important; 
-      box-shadow: 0px 3px 15px rgba(255,0,128,0.4) !important; 
-      cursor: pointer !important; 
-      min-width: 140px !important;
-      transition: all 0.3s ease !important;
-      z-index: 10000 !important; /* HIGH Z-INDEX */
-      position: relative !important;
+      background: linear-gradient(135deg, #ff0066, #ff66cc); 
+      border: none; 
+      color: white; 
+      padding: 12px 24px; 
+      border-radius: 25px; 
+      font-size: 14px; 
+      margin: 4px; 
+      box-shadow: 0px 3px 15px rgba(255,0,128,0.4); 
+      cursor: pointer; 
+      min-width: 140px;
+      transition: all 0.3s ease;
+      z-index: 10000 !important;
   }
   button:hover { 
-      transform: scale(1.05) !important; 
-      box-shadow: 0px 5px 20px rgba(255,0,128,0.6) !important;
+      transform: scale(1.05); 
+      box-shadow: 0px 5px 20px rgba(255,0,128,0.6);
   }
   button:active { 
-      transform: scale(0.95) !important; 
+      transform: scale(0.95); 
   }
   .final-output { 
       position: fixed !important; 
@@ -1461,75 +1462,90 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       height: 100vh !important; 
       top: 0 !important; 
       left: 0 !important; 
-      background: rgba(0,0,0,0.95) !important; 
-      display: none !important; 
-      justify-content: center !important; 
-      align-items: center !important; 
-      z-index: 100000 !important; 
+      background: rgba(0,0,0,0.9); 
+      display: none; 
+      justify-content: center; 
+      align-items: center; 
+      z-index: 99999 !important; 
   }
   #logoImg { 
-      position: absolute !important; 
-      top: 20px !important; 
-      left: 20px !important; 
-      width: 40px !important;
-      height: 40px !important;
-      z-index: 50 !important; 
-      opacity: 1 !important;
-      filter: brightness(1.2) !important;
+      position: absolute; 
+      top: 20px; 
+      left: 20px; 
+      width: 40px;
+      height: 40px;
+      z-index: 50; 
+      opacity: 1;
+      filter: brightness(1.2);
   }
   canvas { 
-      display: none !important; 
+      display: none; 
+  }
+  
+  /* BACK BUTTON FOR DASHBOARD */
+  .back-button-container {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 10001;
   }
   
   /* Mobile specific */
   @media (max-width: 768px) {
       button {
-          padding: 10px 20px !important;
-          font-size: 13px !important;
-          min-width: 120px !important;
-          margin: 3px !important;
+          padding: 10px 20px;
+          font-size: 13px;
+          min-width: 120px;
+          margin: 3px;
       }
       .controls {
-          bottom: 8vh !important;
-          gap: 8px !important;
-          padding: 10px 0 !important;
-      }
-      #status {
-          font-size: 12px !important;
-          top: 15px !important;
+          padding: 12px 8px !important;
+          gap: 8px;
       }
       .reel-bg {
-          height: 70vh !important; /* FURTHER REDUCED FOR MOBILE */
+          height: 70vh !important;
+      }
+      #status {
+          font-size: 12px;
+          top: 15px;
       }
   }
   
   @media (max-width: 480px) {
       button {
-          padding: 8px 16px !important;
-          font-size: 12px !important;
-          min-width: 110px !important;
-          margin: 2px !important;
+          padding: 8px 16px;
+          font-size: 12px;
+          min-width: 110px;
+          margin: 2px;
       }
       .controls {
-          bottom: 6vh !important;
-          gap: 5px !important;
-          padding: 8px 0 !important;
+          padding: 10px 5px !important;
+          gap: 5px;
       }
       .reel-bg {
-          height: 65vh !important; /* EVEN MORE FOR SMALL PHONES */
+          height: 65vh !important;
+      }
+      #status {
+          font-size: 11px;
+          top: 12px;
       }
   }
   
-  /* FIX FOR ZOOM/SCROLL */
-  .reel-container {
-      transform-origin: top center !important;
-  }
-  
-  /* ENSURE BUTTONS ARE ALWAYS VISIBLE */
-  .controls button {
-      visibility: visible !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
+  /* Extra small screens */
+  @media (max-width: 360px) {
+      button {
+          padding: 6px 12px;
+          font-size: 11px;
+          min-width: 100px;
+          margin: 2px;
+      }
+      .controls {
+          padding: 8px 4px !important;
+          gap: 4px;
+      }
+      .reel-bg {
+          height: 60vh !important;
+      }
   }
   </style>
 </head>
@@ -1601,21 +1617,6 @@ const ctx = canvas.getContext("2d");
 const logoImg = new Image();
 logoImg.src = document.getElementById("logoImg").src;
 
-/* ================== PREVENT ZOOM/SCROLL ================== */
-document.addEventListener('wheel', function(e) {
-    if (e.ctrlKey) {
-        e.preventDefault();
-    }
-}, { passive: false });
-
-document.addEventListener('touchmove', function(e) {
-    if (e.scale !== 1) {
-        e.preventDefault();
-    }
-}, { passive: false });
-
-document.documentElement.style.touchAction = 'none';
-
 /* ================== AUDIO CONTEXT FIX ================== */
 async function ensureAudioContext() {
     if (!audioContext) {
@@ -1667,7 +1668,7 @@ function drawCanvas() {
 
     // Mobile-friendly 9:16 aspect ratio (1080x1920)
     const canvasW = canvas.width; // 1080
-    const canvasH = canvas.height * 0.75; // Adjusted for better visibility
+    const canvasH = canvas.height * 0.85; // 1920 * 0.85 = ~1632
 
     const imgRatio = mainBg.naturalWidth / mainBg.naturalHeight;
     const canvasRatio = canvasW / canvasH;
@@ -1964,21 +1965,18 @@ document.addEventListener('touchstart', async () => {
     await ensureAudioContext();
 }, { once: true });
 
-// Prevent context menu on long press
-document.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-});
-
 // Initialize
 window.onload = async () => {
     await ensureAudioContext();
-    status.innerText = "Ready 🎤";
+    status.innerText = "Ready 🎤 Tap anywhere to start";
     
     // Force buttons to be visible
-    document.querySelectorAll('button').forEach(btn => {
-        btn.style.visibility = 'visible';
-        btn.style.opacity = '1';
-    });
+    const controls = document.querySelector('.controls');
+    if (controls) {
+        controls.style.display = 'flex';
+        controls.style.visibility = 'visible';
+        controls.style.opacity = '1';
+    }
 };
 </script>
 </body>
