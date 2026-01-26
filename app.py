@@ -1560,9 +1560,6 @@ const playRecordingBtn = document.getElementById("playRecordingBtn");
 const downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
 const newRecordingBtn = document.getElementById("newRecordingBtn");
 
-originalSource.connect(originalGain);
-originalGain.connect(audioContext.destination);
-
 const canvas = document.getElementById("recordingCanvas");
 const ctx = canvas.getContext("2d");
 
@@ -1650,7 +1647,6 @@ recordBtn.onclick = async () => {
         
         // Start playing original song for reference (BUT NOT IN RECORDING)
         try {
-
             await originalAudio.play();
         } catch (e) {
             console.log("Original play error:", e);
@@ -1680,10 +1676,10 @@ recordBtn.onclick = async () => {
         
         // Create gain nodes for volume control
         micGain = audioContext.createGain();
-        micGain.gain.value = 1.0; // Increase voice volume
+        micGain.gain.value = 2.0; // Increase voice volume
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.5; // Slightly reduce accompaniment volume
+        accGain.gain.value = 0.8; // Slightly reduce accompaniment volume
         
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
