@@ -1703,7 +1703,7 @@ recordBtn.onclick = async () => {
         micGain.gain.value = 2.0; // Increase voice volume
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.8; // Slightly reduce accompaniment volume
+        accGain.gain.value = 0.5; // Slightly reduce accompaniment volume
         
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
