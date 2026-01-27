@@ -1543,7 +1543,8 @@ let audioContext, micSource, accSource, micGain, accGain, compressor, equalizer;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
-let referenceAudio = null; // Store reference audio globally
+let referenceAudio = null;
+let autoStopTimer = null; // For auto-stop
 
 /* ================== ELEMENTS ================== */
 const playBtn = document.getElementById("playBtn");
@@ -1633,7 +1634,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - STABLE VERSION (NO VOICE BREAK) ================== */
+/* ================== RECORD - FIXED DOWNLOAD DURATION ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     
@@ -1646,27 +1647,31 @@ recordBtn.onclick = async () => {
         originalAudio.currentTime = 0;
         accompanimentAudio.currentTime = 0;
         
-        // ✅ FIXED: Create reference audio for user (NOT in recording)
-        referenceAudio = new Audio(originalAudio.src);
-        referenceAudio.volume = 0.8; // Reference volume
+        // Clear any previous timer
+        if (autoStopTimer) {
+            clearTimeout(autoStopTimer);
+            autoStopTimer = null;
+        }
         
-        // ✅ FIXED: Get microphone with BETTER SETTINGS
+        // Create reference audio for user (NOT in recording)
+        referenceAudio = new Audio(originalAudio.src);
+        referenceAudio.volume = 0.8;
+        
+        // Get microphone
         const micStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                echoCancellation: true,       // Enable echo cancellation
-                noiseSuppression: true,       // Enable noise suppression
-                autoGainControl: false,       // Disable auto-gain (causes breaks)
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: false,
                 channelCount: 1,
                 sampleRate: 48000,
                 sampleSize: 16,
-                volume: 1.0,
-                // Add latency hint for stability
-                latency: 0
+                volume: 1.0
             },
             video: false
         });
         
-        // ✅ FIXED: Create stable audio sources
+        // Create audio sources
         micSource = audioContext.createMediaStreamSource(micStream);
         
         // Load accompaniment audio
@@ -1677,32 +1682,34 @@ recordBtn.onclick = async () => {
         accSource = audioContext.createBufferSource();
         accSource.buffer = accDecoded;
         
-        // Create gain nodes with STABLE values
+        // Store song duration for later
+        const songDuration = accDecoded.duration;
+        
+        // Create gain nodes
         micGain = audioContext.createGain();
-        micGain.gain.value = 2.0;  // Voice volume (reduced for stability)
+        micGain.gain.value = 2.0;
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.25;  // Accompaniment volume
+        accGain.gain.value = 0.25;
         
-        // Add gentle compressor (not too aggressive)
+        // Audio processing
         compressor = audioContext.createDynamicsCompressor();
-        compressor.threshold.value = -40;     // Higher threshold
-        compressor.knee.value = 30;           // Softer knee
-        compressor.ratio.value = 6;           // Lower ratio
-        compressor.attack.value = 0.01;       // Slower attack
-        compressor.release.value = 0.15;      // Faster release
+        compressor.threshold.value = -40;
+        compressor.knee.value = 30;
+        compressor.ratio.value = 6;
+        compressor.attack.value = 0.01;
+        compressor.release.value = 0.15;
         
-        // Mild equalizer
         equalizer = audioContext.createBiquadFilter();
         equalizer.type = "peaking";
-        equalizer.frequency.value = 1800;     // Slightly lower frequency
-        equalizer.gain.value = 6.0;          // Less boost
-        equalizer.Q.value = 0.8;             // Broader Q
+        equalizer.frequency.value = 1800;
+        equalizer.gain.value = 6.0;
+        equalizer.Q.value = 0.8;
         
         // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
         
-        // ✅ FIXED: Simple and stable connection chain
+        // Connect audio chain
         micSource.connect(micGain);
         micGain.connect(equalizer);
         equalizer.connect(compressor);
@@ -1711,13 +1718,12 @@ recordBtn.onclick = async () => {
         accSource.connect(accGain);
         accGain.connect(destination);
         
-        // ✅ FIXED: Start reference audio FIRST (for sync)
+        // Start reference audio
         referenceAudio.play().catch(e => {
             console.log("Reference audio play error:", e);
-            // If reference fails, still continue recording
         });
         
-        // ✅ FIXED: Add small delay before starting accompaniment
+        // Start accompaniment playback
         setTimeout(() => {
             try {
                 accSource.start();
@@ -1746,15 +1752,18 @@ recordBtn.onclick = async () => {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // ✅ FIXED: Use simpler MediaRecorder settings
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') 
+        // ✅ FIXED: Use better MediaRecorder settings for proper duration
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
+            ? 'video/webm;codecs=vp9,opus'
+            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
             ? 'video/webm;codecs=vp8,opus'
             : 'video/webm';
         
+        // ✅ IMPORTANT: Don't use timeslice parameter for proper duration
         mediaRecorder = new MediaRecorder(combinedStream, {
             mimeType: mimeType,
-            videoBitsPerSecond: 2000000,  // Slightly lower for stability
-            audioBitsPerSecond: 128000    // Standard bitrate
+            videoBitsPerSecond: 2000000,
+            audioBitsPerSecond: 128000
         });
         
         recordedChunks = [];
@@ -1774,26 +1783,49 @@ recordBtn.onclick = async () => {
                 referenceAudio = null;
             }
             
+            // ✅ FIXED: Ensure all chunks are collected
+            if (recordedChunks.length === 0) {
+                console.warn("No recorded data!");
+                status.innerText = "❌ No recording data";
+                return;
+            }
+            
             const blob = new Blob(recordedChunks, { type: mimeType });
+            
+            // ✅ FIXED: Create object URL properly
             const url = URL.createObjectURL(blob);
             
-            if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
+            if (lastRecordingURL) {
+                try {
+                    URL.revokeObjectURL(lastRecordingURL);
+                } catch(e) {
+                    console.log("Error revoking URL:", e);
+                }
+            }
             lastRecordingURL = url;
             
             finalBg.src = mainBg.src;
             finalDiv.style.display = "flex";
-            finalStatus.innerText = "🎉 Recording Complete! Voice is clear!";
+            finalStatus.innerText = "🎉 Recording Complete!";
             
-            // Download with song name
+            // ✅ FIXED: Create proper download link with correct duration
             const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
             const fileName = songName + "_karaoke_recording.webm";
+            
+            // Set download link
             downloadRecordingBtn.href = url;
             downloadRecordingBtn.download = fileName;
+            downloadRecordingBtn.onclick = (e) => {
+                // Allow download to proceed naturally
+                console.log("Downloading:", fileName, "Size:", blob.size);
+            };
             
+            // Playback button
             playRecordingBtn.onclick = () => {
                 if (!isPlayingRecording) {
                     if (playRecordingAudio) {
                         playRecordingAudio.pause();
+                        playRecordingAudio.currentTime = 0;
                         playRecordingAudio = null;
                     }
                     playRecordingAudio = new Audio(url);
@@ -1807,8 +1839,8 @@ recordBtn.onclick = async () => {
                         isPlayingRecording = false;
                     };
                     
-                    playRecordingAudio.onerror = () => {
-                        console.log("Playback error");
+                    playRecordingAudio.onerror = (e) => {
+                        console.log("Playback error:", e);
                         playRecordingBtn.innerText = "▶ Play";
                         isPlayingRecording = false;
                     };
@@ -1823,24 +1855,24 @@ recordBtn.onclick = async () => {
             };
         };
         
-        // ✅ FIXED: Start recording with timeslice for stability
-        mediaRecorder.start(500); // Collect data every 500ms
+        // ✅ FIXED: Start WITHOUT timeslice parameter for full duration
+        mediaRecorder.start();
         
         // Update UI
         isRecording = true;
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording... Voice stable!";
+        status.innerText = "🎙 Recording...";
         
-        // Auto-stop when accompaniment ends
-        const songDuration = accSource.buffer.duration * 1000;
-        setTimeout(() => {
+        // ✅ FIXED: Auto-stop with exact duration
+        autoStopTimer = setTimeout(() => {
             if (isRecording) {
+                console.log("Auto-stopping recording after:", songDuration, "seconds");
                 stopRecording();
-                status.innerText = "✅ Recording completed automatically!";
+                status.innerText = "✅ Recording completed!";
             }
-        }, songDuration + 1000);
+        }, (songDuration * 1000) + 500); // Add 500ms buffer
         
     } catch (error) {
         console.error("Recording setup error:", error);
@@ -1858,20 +1890,30 @@ recordBtn.onclick = async () => {
             referenceAudio.currentTime = 0;
             referenceAudio = null;
         }
+        if (autoStopTimer) {
+            clearTimeout(autoStopTimer);
+            autoStopTimer = null;
+        }
     }
 };
 
-/* ================== STOP RECORDING (STABLE VERSION) ================== */
+/* ================== STOP RECORDING ================== */
 function stopRecording() {
     if (!isRecording) return;
     
     try {
+        // Clear auto-stop timer
+        if (autoStopTimer) {
+            clearTimeout(autoStopTimer);
+            autoStopTimer = null;
+        }
+        
         // Stop media recorder if active
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             mediaRecorder.stop();
         }
         
-        // Stop audio sources gracefully
+        // Stop audio sources
         if (accSource) {
             try { 
                 accSource.stop(); 
@@ -1899,7 +1941,7 @@ function stopRecording() {
             canvasRafId = null;
         }
         
-        // Gracefully disconnect audio nodes
+        // Disconnect audio nodes
         setTimeout(() => {
             try {
                 if (micSource) micSource.disconnect();
@@ -1916,7 +1958,7 @@ function stopRecording() {
         // Update UI
         isRecording = false;
         stopBtn.style.display = "none";
-        status.innerText = "⏹ Processing recording...";
+        status.innerText = "⏹ Processing...";
         
     } catch (error) {
         console.error("Stop recording error:", error);
@@ -1934,6 +1976,7 @@ newRecordingBtn.onclick = () => {
     // Cleanup
     if (playRecordingAudio) {
         playRecordingAudio.pause();
+        playRecordingAudio.currentTime = 0;
         playRecordingAudio = null;
     }
     
@@ -1950,6 +1993,12 @@ newRecordingBtn.onclick = () => {
         referenceAudio = null;
     }
     
+    // Clear timer
+    if (autoStopTimer) {
+        clearTimeout(autoStopTimer);
+        autoStopTimer = null;
+    }
+    
     // Reset UI
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
@@ -1964,7 +2013,11 @@ newRecordingBtn.onclick = () => {
     
     // Release URL
     if (lastRecordingURL) {
-        URL.revokeObjectURL(lastRecordingURL);
+        try {
+            URL.revokeObjectURL(lastRecordingURL);
+        } catch(e) {
+            console.log("Error revoking URL:", e);
+        }
         lastRecordingURL = null;
     }
 };
@@ -2004,12 +2057,19 @@ window.addEventListener('beforeunload', () => {
         referenceAudio.currentTime = 0;
     }
     if (lastRecordingURL) {
-        URL.revokeObjectURL(lastRecordingURL);
+        try {
+            URL.revokeObjectURL(lastRecordingURL);
+        } catch(e) {
+            console.log("Error revoking URL:", e);
+        }
+    }
+    if (autoStopTimer) {
+        clearTimeout(autoStopTimer);
     }
 });
 
 window.addEventListener('load', () => {
-    console.log("Karaoke Player Loaded - Stable Version");
+    console.log("Karaoke Player Loaded - Fixed Download Duration");
     status.innerText = "Ready 🎤";
 });
 </script>
