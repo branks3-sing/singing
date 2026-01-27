@@ -1638,7 +1638,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE - MOBILE OPTIMIZED
+    # ✅ IMPROVED KARAOKE TEMPLATE WITH BETTER AUDIO PROCESSING
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1853,7 +1853,7 @@ canvas {
     <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%" preload="auto"></audio>
     <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%" preload="auto"></audio>
     <div class="controls">
-      <button id="playBtn">▶ Play</button>
+      <button id="playBtn">▶ Play Reference</button>
       <button id="recordBtn">🎙 Record</button>
       <button id="stopBtn" style="display:none;">⏹ Stop</button>
     </div>
@@ -1936,7 +1936,10 @@ if (isMobile) {
 /* ================== AUDIO CONTEXT FIX ================== */
 async function ensureAudioContext() {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+            latencyHint: 'interactive',
+            sampleRate: 48000
+        });
     }
     if (audioContext.state === "suspended") {
         await audioContext.resume();
@@ -1970,9 +1973,10 @@ recordBtn.addEventListener('touchend', function(e) {
 playBtn.onclick = function() {
     if (originalAudio.paused) {
         originalAudio.currentTime = 0;
+        originalAudio.volume = 0.8;
         originalAudio.play().then(() => {
             playBtn.innerText = "⏹ Stop";
-            status.innerText = "🎵 Playing song...";
+            status.innerText = "🎵 Playing reference song...";
         }).catch(e => {
             console.log("Play error:", e);
             status.innerText = "❌ Tap to play";
@@ -1984,7 +1988,7 @@ playBtn.onclick = function() {
     } else {
         originalAudio.pause();
         originalAudio.currentTime = 0;
-        playBtn.innerText = "▶ Play";
+        playBtn.innerText = "▶ Play Reference";
         status.innerText = "⏹ Stopped";
     }
 };
@@ -2023,7 +2027,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - MOBILE OPTIMIZED ================== */
+/* ================== IMPROVED RECORDING FUNCTION ================== */
 recordBtn.onclick = async function() {
     if (isRecording) return;
     
@@ -2032,7 +2036,7 @@ recordBtn.onclick = async function() {
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Starting...";
+    status.innerText = "🎙 Starting recording...";
     
     try {
         await ensureAudioContext();
@@ -2049,27 +2053,29 @@ recordBtn.onclick = async function() {
             autoStopTimer = null;
         }
         
-        // Create reference audio
+        // Create reference audio for playback ONLY (not for recording)
         referenceAudio = new Audio(originalAudio.src);
         referenceAudio.volume = 0.8;
         
-        // Get microphone with mobile-optimized settings
+        // Get microphone with optimized settings for clarity
         const micStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
                 echoCancellation: true,
                 noiseSuppression: true,
-                autoGainControl: true,
+                autoGainControl: false,  // Turn off auto gain for better control
                 channelCount: 1,
-                sampleRate: isMobile ? 22050 : 44100  // Mobile ki lower sample rate
+                sampleRate: 48000,
+                volume: 1.0,
+                latency: 0
             },
             video: false
         }).catch(err => {
-            status.innerText = "❌ Mic access needed";
+            status.innerText = "❌ Microphone access required";
             resetUIOnError();
             throw err;
         });
         
-        // Create audio sources
+        // Create audio nodes
         micSource = audioContext.createMediaStreamSource(micStream);
         
         // Load accompaniment
@@ -2081,26 +2087,44 @@ recordBtn.onclick = async function() {
         accSource.buffer = accDecoded;
         const songDuration = accDecoded.duration;
         
-        // Mobile ki gain values adjust
+        // Create gains with better settings for voice clarity
         micGain = audioContext.createGain();
-        micGain.gain.value = isMobile ? 2.5 : 2.0;  // Mobile ki mic gain ekkuva
+        micGain.gain.value = 3.0;  // Increased for better voice clarity
         
         accGain = audioContext.createGain();
-        accGain.gain.value = isMobile ? 0.15 : 0.25;  // Mobile ki accompaniment taggu
+        accGain.gain.value = 0.7;  // Balanced accompaniment level
         
-        // Create destination
+        // Create compressor for better voice quality
+        const compressor = audioContext.createDynamicsCompressor();
+        compressor.threshold.value = -50;
+        compressor.knee.value = 40;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0;
+        compressor.release.value = 0.25;
+        
+        // Create biquad filter for voice enhancement
+        const voiceFilter = audioContext.createBiquadFilter();
+        voiceFilter.type = "bandpass";
+        voiceFilter.frequency.value = 1000;
+        voiceFilter.Q.value = 1;
+        
+        // Create destination for recording
         const destination = audioContext.createMediaStreamDestination();
         
-        // Connect audio
+        // Connect audio chain for recording (voice + accompaniment ONLY)
         micSource.connect(micGain);
-        micGain.connect(destination);
+        micGain.connect(voiceFilter);
+        voiceFilter.connect(compressor);
+        compressor.connect(destination);
+        
+        // Connect accompaniment for recording
         accSource.connect(accGain);
         accGain.connect(destination);
         
-        // Start reference audio
+        // Start reference audio for listening (NOT in recording)
         referenceAudio.play().catch(e => console.log("Reference audio:", e));
         
-        // Start accompaniment
+        // Start accompaniment for recording
         setTimeout(() => {
             try {
                 accSource.start();
@@ -2109,34 +2133,36 @@ recordBtn.onclick = async function() {
                 resetUIOnError();
                 return;
             }
-        }, 50);
+        }, 100);
         
         // Start canvas drawing
         drawCanvas();
         
-        // Create stream
-        const canvasStream = canvas.captureStream(isMobile ? 15 : 30);  // Mobile ki frame rate taggu
+        // Create stream for recording
+        const canvasStream = canvas.captureStream(isMobile ? 30 : 60);
         const mixedAudioStream = destination.stream;
         
+        // Combine video and audio streams
         const combinedStream = new MediaStream([
             ...canvasStream.getVideoTracks(),
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // Mobile-friendly MediaRecorder settings
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') 
+        // MediaRecorder settings for high quality
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
+            ? 'video/webm;codecs=vp9,opus'
+            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') 
             ? 'video/webm;codecs=vp8,opus'
-            : MediaRecorder.isTypeSupported('video/mp4') 
-            ? 'video/mp4'
             : 'video/webm';
         
-        // Mobile ki bitrate taggu
-        const videoBitrate = isMobile ? 500000 : 1500000;
-        const audioBitrate = isMobile ? 64000 : 128000;
+        // High quality settings for clear audio
+        const videoBitrate = isMobile ? 2500000 : 5000000;
+        const audioBitrate = 192000;  // High quality audio
         
         mediaRecorder = new MediaRecorder(combinedStream, {
             mimeType: mimeType,
             videoBitsPerSecond: videoBitrate,
+            audioBitsPerSecond: audioBitrate,
             audioBitsPerSecond: audioBitrate
         });
         
@@ -2157,7 +2183,7 @@ recordBtn.onclick = async function() {
                 referenceAudio = null;
             }
             
-            // Create blob
+            // Create final recording
             if (recordedChunks.length > 0) {
                 const blob = new Blob(recordedChunks, { type: mimeType });
                 const url = URL.createObjectURL(blob);
@@ -2167,10 +2193,11 @@ recordBtn.onclick = async function() {
                 
                 finalBg.src = mainBg.src;
                 finalDiv.style.display = "flex";
+                finalStatus.innerText = "✅ Recording Complete!";
                 
                 // Set download link
                 const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                const fileName = songName + "_recording" + (mimeType.includes('mp4') ? '.mp4' : '.webm');
+                const fileName = songName + "_karaoke_recording" + (mimeType.includes('mp4') ? '.mp4' : '.webm');
                 downloadRecordingBtn.href = url;
                 downloadRecordingBtn.download = fileName;
                 
@@ -2182,6 +2209,7 @@ recordBtn.onclick = async function() {
                             playRecordingAudio = null;
                         }
                         playRecordingAudio = new Audio(url);
+                        playRecordingAudio.volume = 1.0;
                         playRecordingAudio.play();
                         playRecordingBtn.innerText = "⏹ Stop";
                         isPlayingRecording = true;
@@ -2203,24 +2231,26 @@ recordBtn.onclick = async function() {
         };
         
         // Start recording
-        mediaRecorder.start();
-        status.innerText = "🎙 Recording... Sing!";
+        mediaRecorder.start(100);  // Collect data every 100ms for smoother recording
+        status.innerText = "🎙 Recording... Sing clearly! (Use headphones for best results)";
         
-        // Auto-stop timer
+        // Auto-stop timer based on song duration
         autoStopTimer = setTimeout(() => {
             if (isRecording) {
                 stopRecording();
             }
-        }, (songDuration * 1000) + 500);
+        }, (songDuration * 1000) + 1000);
         
     } catch (error) {
         console.error("Recording error:", error);
-        status.innerText = "❌ Failed: " + (error.message || "Check mic access");
+        status.innerText = "❌ Error: " + (error.message || "Check microphone permissions");
         resetUIOnError();
         
-        // Mobile ki specific error messages
+        // Platform-specific error messages
         if (isIOS && error.name === 'NotAllowedError') {
-            status.innerText = "📱 Allow mic in Settings";
+            status.innerText = "📱 Allow microphone in Settings > Safari";
+        } else if (isAndroid && error.name === 'NotAllowedError') {
+            status.innerText = "📱 Allow microphone permission in browser";
         }
     }
 };
@@ -2267,7 +2297,7 @@ function stopRecording() {
     // Update UI
     isRecording = false;
     stopBtn.style.display = "none";
-    status.innerText = "✅ Recording complete!";
+    status.innerText = "✅ Processing recording...";
 }
 
 /* ================== STOP BUTTON CLICK ================== */
@@ -2302,7 +2332,7 @@ newRecordingBtn.onclick = function() {
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
-    playBtn.innerText = "▶ Play";
+    playBtn.innerText = "▶ Play Reference";
     status.innerText = "Ready 🎤";
     
     // Reset state
@@ -2323,6 +2353,7 @@ function resetUIOnError() {
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
+    status.innerText = "Ready 🎤";
     
     if (referenceAudio) {
         referenceAudio.pause();
@@ -2344,6 +2375,7 @@ document.addEventListener('touchstart', async () => {
         // Silent audio play chesi unlock chestam
         const silentAudio = new Audio();
         silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ';
+        silentAudio.volume = 0;
         silentAudio.play().then(() => {
             silentAudio.pause();
             silentAudio.currentTime = 0;
@@ -2361,11 +2393,11 @@ document.addEventListener('visibilitychange', async () => {
 /* ================== AUDIO END HANDLER ================== */
 originalAudio.addEventListener('ended', () => {
     if (playBtn.innerText === "⏹ Stop") {
-        playBtn.innerText = "▶ Play";
-        status.innerText = "✅ Song completed";
+        playBtn.innerText = "▶ Play Reference";
+        status.innerText = "✅ Reference song completed";
         
         setTimeout(() => {
-            if (status.innerText === "✅ Song completed") {
+            if (status.innerText === "✅ Reference song completed") {
                 status.innerText = "Ready 🎤";
             }
         }, 1500);
@@ -2374,13 +2406,13 @@ originalAudio.addEventListener('ended', () => {
 
 /* ================== WINDOW LOAD ================== */
 window.addEventListener('load', () => {
-    console.log("Karaoke Player Loaded - Mobile Optimized");
-    status.innerText = "Ready 🎤";
+    console.log("Karaoke Player Loaded - Optimized for Voice Clarity");
+    status.innerText = "Ready 🎤 - Use headphones for best recording";
     
     // Mobile detection
     if (isMobile) {
         console.log("Mobile device detected");
-        status.innerText = "📱 Ready - Tap buttons";
+        status.innerText = "📱 Ready - Use headphones for clear recording";
     }
 });
 
@@ -2400,6 +2432,13 @@ window.addEventListener('resize', () => {
         }
     }
 });
+
+/* ================== IMPORTANT: PREVENT ORIGINAL SONG IN RECORDING ================== */
+// Original song is only for reference playback and is NOT connected to the recording stream
+// The recording ONLY contains:
+// 1. Microphone input (your voice) - processed for clarity
+// 2. Accompaniment track (karaoke version)
+// The reference original song plays separately and is NOT recorded
 </script>
 </body>
 </html>
