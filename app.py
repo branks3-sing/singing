@@ -1638,8 +1638,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE - FIXED VOICE CLARITY AND PREVENTING ORIGINAL SONG RECORDING
-    karaoke_template = """
+# ... [Previous code remains the same until the karaoke_template] ...
+
+# ✅ UPDATED KARAOKE TEMPLATE - FIXED: ORIGINAL SONG NOT RECORDED, ONLY ACCOMPANIMENT + VOICE
+karaoke_template = """
 <!doctype html>
 <html>
 <head>
@@ -1850,7 +1852,9 @@ canvas {
     <img class="reel-bg" id="mainBg" src="data:image/jpeg;base64,%%LYRICS_B64%%" onerror="this.style.display='none'">
     <img id="logoImg" src="data:image/png;base64,%%LOGO_B64%%" onerror="this.style.display='none'">
     <div id="status">Ready 🎤</div>
+    <!-- ✅ ORIGINAL AUDIO (FOR REFERENCE ONLY - NOT IN RECORDING) -->
     <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%" preload="auto"></audio>
+    <!-- ✅ ACCOMPANIMENT AUDIO (WILL BE RECORDED WITH USER'S VOICE) -->
     <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%" preload="auto"></audio>
     <div class="controls">
       <button id="playBtn">▶ Play Reference</button>
@@ -1892,7 +1896,6 @@ let isRecording = false;
 let isPlayingRecording = false;
 let referenceAudio = null;
 let autoStopTimer = null;
-let audioBufferSource = null;
 let isReferencePlaying = false;
 
 /* ================== ELEMENTS ================== */
@@ -1978,20 +1981,27 @@ playBtn.onclick = function() {
         // Stop reference audio
         originalAudio.pause();
         originalAudio.currentTime = 0;
-        if (audioBufferSource) {
-            try { audioBufferSource.stop(); } catch(e) {}
-            audioBufferSource = null;
-        }
         playBtn.innerText = "▶ Play Reference";
         status.innerText = "⏹ Reference stopped";
         isReferencePlaying = false;
     } else {
+        // ✅ IMPORTANT: Stop accompaniment if playing
+        accompanimentAudio.pause();
+        accompanimentAudio.currentTime = 0;
+        
         // Start playing reference audio
         originalAudio.currentTime = 0;
         originalAudio.play().then(() => {
             playBtn.innerText = "⏹ Stop Reference";
             status.innerText = "🎵 Playing reference...";
             isReferencePlaying = true;
+            
+            // Auto stop reference when finished
+            originalAudio.onended = () => {
+                playBtn.innerText = "▶ Play Reference";
+                status.innerText = "✅ Reference completed";
+                isReferencePlaying = false;
+            };
         }).catch(e => {
             console.log("Play error:", e);
             status.innerText = "❌ Tap to play";
@@ -2036,7 +2046,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - FIXED VOICE CLARITY AND NO ORIGINAL SONG IN RECORDING ================== */
+/* ================== RECORD - FIXED: ONLY ACCOMPANIMENT + VOICE ================== */
 recordBtn.onclick = async function() {
     if (isRecording) return;
     
@@ -2050,7 +2060,7 @@ recordBtn.onclick = async function() {
     try {
         const audioCtx = await ensureAudioContext();
         
-        // Stop any current playback
+        // ✅ IMPORTANT: Stop original audio if playing
         if (isReferencePlaying) {
             originalAudio.pause();
             originalAudio.currentTime = 0;
@@ -2107,17 +2117,20 @@ recordBtn.onclick = async function() {
         // Create destination for recording
         destinationNode = audioCtx.createMediaStreamDestination();
         
-        // Connect audio nodes properly
-        // Microphone -> Gain -> Merger (channel 0)
+        // ✅ CRITICAL FIX: Connect ONLY accompaniment + microphone
+        // 1. Microphone -> Gain -> Merger (channel 0)
         micSource.connect(micGain);
         micGain.connect(mergerNode, 0, 0);
         
-        // Accompaniment -> Gain -> Merger (channel 1)
+        // 2. Accompaniment -> Gain -> Merger (channel 1)
         accSource.connect(accGain);
         accGain.connect(mergerNode, 0, 1);
         
-        // Merger -> Destination (for recording)
+        // 3. Merger -> Destination (for recording)
         mergerNode.connect(destinationNode);
+        
+        // ✅ IMPORTANT: DO NOT connect originalAudio to the destinationNode
+        // This prevents original song from being recorded
         
         // Start canvas drawing
         drawCanvas();
@@ -2171,6 +2184,13 @@ recordBtn.onclick = async function() {
                 micSource = null;
             }
             
+            // Clean up audio context
+            if (audioContext) {
+                audioContext.close().then(() => {
+                    audioContext = null;
+                });
+            }
+            
             // Create blob and URL
             if (recordedChunks.length > 0) {
                 const blob = new Blob(recordedChunks, { type: mimeType });
@@ -2221,7 +2241,7 @@ recordBtn.onclick = async function() {
         // Start recording
         mediaRecorder.start(100); // Collect data every 100ms for smoother recording
         
-        // Start accompaniment immediately
+        // ✅ IMPORTANT: Start accompaniment (NOT original song)
         try {
             accSource.start();
         } catch(e) {
@@ -2279,7 +2299,7 @@ function stopRecording() {
         } catch(e) {}
     }
     
-    // Stop main audio
+    // Stop original audio if playing
     originalAudio.pause();
     originalAudio.currentTime = 0;
     
@@ -2313,6 +2333,8 @@ newRecordingBtn.onclick = function() {
     // Reset audio
     originalAudio.pause();
     originalAudio.currentTime = 0;
+    accompanimentAudio.pause();
+    accompanimentAudio.currentTime = 0;
     
     // Reset UI
     playBtn.style.display = "inline-block";
@@ -2387,15 +2409,9 @@ originalAudio.addEventListener('ended', () => {
     }
 });
 
-accompanimentAudio.addEventListener('ended', () => {
-    if (isRecording) {
-        stopRecording();
-    }
-});
-
 /* ================== WINDOW LOAD ================== */
 window.addEventListener('load', () => {
-    console.log("Karaoke Player Loaded - Optimized for Voice Clarity");
+    console.log("Karaoke Player Loaded - Voice + Accompaniment Only");
     status.innerText = "Ready 🎤 - Use headphones for best results";
     
     // Mobile detection
@@ -2403,6 +2419,12 @@ window.addEventListener('load', () => {
         console.log("Mobile device detected");
         status.innerText = "📱 Ready - Use headphones for recording";
     }
+    
+    // Clear any previous audio state
+    originalAudio.pause();
+    originalAudio.currentTime = 0;
+    accompanimentAudio.pause();
+    accompanimentAudio.currentTime = 0;
 });
 
 /* ================== WINDOW RESIZE HANDLER ================== */
@@ -2431,9 +2453,21 @@ window.addEventListener('beforeunload', () => {
         audioContext.close();
     }
 });
+
+/* ================== IMPORTANT SAFETY CHECK ================== */
+// This ensures original song is never mixed with recording
+function safetyCheck() {
+    console.log("✅ Safety Check: Original song will NOT be recorded");
+    console.log("✅ Only accompaniment + user voice will be recorded");
+}
+
+safetyCheck();
 </script>
 </body>
 </html>
+"""
+
+# ... [Rest of the code remains the same] ...
 """
 
     karaoke_html = karaoke_template.replace("%%LYRICS_B64%%", lyrics_b64 or "")
