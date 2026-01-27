@@ -11,6 +11,8 @@ from datetime import datetime
 from PIL import Image, ImageDraw
 import requests
 from io import BytesIO
+import subprocess
+import tempfile
 
 # =============== LOGO DOWNLOAD AND LOADING ===============
 def ensure_logo_exists():
@@ -80,6 +82,62 @@ os.makedirs(lyrics_dir, exist_ok=True)
 os.makedirs(logo_dir, exist_ok=True)
 os.makedirs(shared_links_dir, exist_ok=True)
 
+# =============== AUDIO DURATION FIX FUNCTIONS ===============
+def get_audio_duration(file_path):
+    """Get accurate audio duration using ffprobe (fallback to pydub if available)"""
+    try:
+        # Try using ffprobe first (most accurate)
+        cmd = [
+            'ffprobe', '-v', 'error', '-show_entries', 
+            'format=duration', '-of', 
+            'default=noprint_wrappers=1:nokey=1', file_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            duration = float(result.stdout.strip())
+            return duration
+    except:
+        pass
+    
+    try:
+        # Fallback to pydub if installed
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(file_path)
+        return len(audio) / 1000.0  # Convert to seconds
+    except:
+        pass
+    
+    # Final fallback - estimate from file size
+    try:
+        import wave
+        with wave.open(file_path, 'rb') as wav_file:
+            frames = wav_file.getnframes()
+            rate = wav_file.getframerate()
+            return frames / float(rate)
+    except:
+        pass
+    
+    return 30.0  # Default fallback
+
+def fix_audio_duration(input_path, output_path):
+    """Fix audio duration metadata"""
+    try:
+        # Use ffmpeg to copy audio while ensuring proper duration
+        cmd = [
+            'ffmpeg', '-i', input_path,
+            '-c', 'copy',  # Copy without re-encoding
+            '-map_metadata', '0',  # Copy metadata
+            '-y',  # Overwrite output
+            output_path
+        ]
+        subprocess.run(cmd, capture_output=True)
+        return True
+    except:
+        # If ffmpeg fails, just copy the file
+        import shutil
+        shutil.copy2(input_path, output_path)
+        return True
+
 # =============== CACHED FUNCTIONS FOR PERFORMANCE ===============
 @st.cache_data(ttl=5)
 def get_song_files_cached():
@@ -125,7 +183,8 @@ def init_session_db():
         c.execute('''CREATE TABLE IF NOT EXISTS metadata
                      (song_name TEXT PRIMARY KEY,
                       uploaded_by TEXT,
-                      timestamp REAL)''')
+                      timestamp REAL,
+                      duration REAL)''')  # Added duration field
         conn.commit()
         conn.close()
     except:
@@ -217,15 +276,15 @@ def load_shared_links_from_db():
         pass
     return links
 
-def save_metadata_to_db(song_name, uploaded_by):
+def save_metadata_to_db(song_name, uploaded_by, duration=None):
     """Save metadata to database"""
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO metadata 
-                     (song_name, uploaded_by, timestamp)
-                     VALUES (?, ?, ?)''',
-                  (song_name, uploaded_by, time.time()))
+                     (song_name, uploaded_by, timestamp, duration)
+                     VALUES (?, ?, ?, ?)''',
+                  (song_name, uploaded_by, time.time(), duration))
         conn.commit()
         conn.close()
     except:
@@ -248,12 +307,16 @@ def load_metadata_from_db():
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
-        c.execute('SELECT song_name, uploaded_by FROM metadata')
+        c.execute('SELECT song_name, uploaded_by, duration FROM metadata')
         results = c.fetchall()
         conn.close()
         
-        for song_name, uploaded_by in results:
-            metadata[song_name] = {"uploaded_by": uploaded_by, "timestamp": str(time.time())}
+        for song_name, uploaded_by, duration in results:
+            metadata[song_name] = {
+                "uploaded_by": uploaded_by, 
+                "timestamp": str(time.time()),
+                "duration": duration
+            }
     except:
         pass
     return metadata
@@ -282,7 +345,11 @@ def load_metadata():
             file_metadata = {}
     
     db_metadata = load_metadata_from_db()
-    file_metadata.update(db_metadata)
+    
+    # Merge, preferring database metadata
+    for song_name, info in db_metadata.items():
+        file_metadata[song_name] = info
+    
     return file_metadata
 
 def save_metadata(data):
@@ -292,7 +359,8 @@ def save_metadata(data):
     
     for song_name, info in data.items():
         uploaded_by = info.get("uploaded_by", "unknown")
-        save_metadata_to_db(song_name, uploaded_by)
+        duration = info.get("duration")
+        save_metadata_to_db(song_name, uploaded_by, duration)
 
 def delete_metadata(song_name):
     """Delete metadata from both file and database"""
@@ -406,6 +474,35 @@ def process_query_params():
             st.session_state.role = "guest"
 
         save_session_to_db()
+
+# =============== GET AUDIO DURATION FOR SONG ===============
+def get_song_duration(song_name):
+    """Get duration for a song, calculate if not stored"""
+    metadata = get_metadata_cached()
+    
+    if song_name in metadata and "duration" in metadata[song_name]:
+        duration = metadata[song_name]["duration"]
+        if duration and duration > 0:
+            return duration
+    
+    # Calculate duration
+    acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
+    if os.path.exists(acc_path):
+        try:
+            duration = get_audio_duration(acc_path)
+            # Store in metadata
+            if song_name in metadata:
+                metadata[song_name]["duration"] = duration
+            else:
+                metadata[song_name] = {"duration": duration, "uploaded_by": "unknown"}
+            
+            save_metadata(metadata)
+            get_metadata_cached.clear()
+            return duration
+        except:
+            pass
+    
+    return 180  # Default 3 minutes if cannot determine
 
 # =============== INITIALIZE SESSION ===============
 check_and_create_session_id()
@@ -999,17 +1096,29 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     f"{song_name}_lyrics_bg{lyrics_ext}"
                 )
 
+                # Save files
                 with open(original_path, "wb") as f:
                     f.write(uploaded_original.getbuffer())
                 with open(acc_path, "wb") as f:
                     f.write(uploaded_accompaniment.getbuffer())
                 with open(lyrics_path, "wb") as f:
                     f.write(uploaded_lyrics_image.getbuffer())
-
+                
+                # Fix audio duration metadata
+                try:
+                    fix_audio_duration(original_path, original_path)
+                    fix_audio_duration(acc_path, acc_path)
+                except:
+                    pass
+                
+                # Calculate and store duration
+                duration = get_audio_duration(acc_path)
+                
                 metadata = get_metadata_cached()
                 metadata[song_name] = {
                     "uploaded_by": st.session_state.user,
-                    "timestamp": str(time.time())
+                    "timestamp": str(time.time()),
+                    "duration": duration
                 }
                 save_metadata(metadata)
 
@@ -1017,6 +1126,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 get_metadata_cached.clear()
 
                 st.success(f"✅ Song Uploaded Successfully: {song_name}")
+                st.info(f"⏱️ Duration: {int(duration//60)}:{int(duration%60):02d}")
                 st.balloons()
                 time.sleep(1)
                 st.rerun()
@@ -1049,8 +1159,12 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 for idx, s in enumerate(uploaded_songs):
                     col1 = st.columns(1)[0]
                     with col1:
+                        # Show duration if available
+                        duration = get_song_duration(s)
+                        duration_text = f" [{int(duration//60)}:{int(duration%60):02d}]"
+                        
                         if st.button(
-                            f"🎶 {s}",
+                            f"🎶 {s}{duration_text}",
                             key=f"song_name_{s}_{idx}",
                             help="Click to play song",
                             use_container_width=True,
@@ -1085,8 +1199,12 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     col1, col2, col3 = st.columns([3, 1, 1])
                     
                     with col1:
+                        # Show duration if available
+                        duration = get_song_duration(s)
+                        duration_text = f" [{int(duration//60)}:{int(duration%60):02d}]"
+                        
                         if st.button(
-                            f"🎶 {s}",
+                            f"🎶 {s}{duration_text}",
                             key=f"song_name_{s}_{idx}",
                             help="Click to play song",
                             use_container_width=True,
@@ -1416,8 +1534,11 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
     else:
         if st.session_state.get('mobile_mode', False):
             for idx, song in enumerate(uploaded_songs):
+                duration = get_song_duration(song)
+                duration_text = f" [{int(duration//60)}:{int(duration%60):02d}]"
+                
                 if st.button(
-                    f"🎵 {song}",
+                    f"🎵 {song}{duration_text}",
                     key=f"user_song_{song}_{idx}",
                     help="Click to play song",
                     use_container_width=True,
@@ -1426,8 +1547,11 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
                     open_song_player(song)
         else:
             for idx, song in enumerate(uploaded_songs):
+                duration = get_song_duration(song)
+                duration_text = f" [{int(duration//60)}:{int(duration%60):02d}]"
+                
                 if st.button(
-                    f"✅ *{song}*",
+                    f"✅ *{song}*{duration_text}",
                     key=f"user_song_{song}_{idx}",
                     help="Click to play song",
                     use_container_width=True,
@@ -1527,8 +1651,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     original_b64 = file_to_base64(original_path)
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
+    
+    # Get accurate duration
+    song_duration = get_song_duration(selected_song)
 
-    # ✅✅✅ FIXED KARAOKE TEMPLATE - ORIGINAL SONG PLAYS WHEN RECORDING BUT NOT RECORDED
+    # ✅✅✅ FIXED KARAOKE TEMPLATE - MOBILE VOICE CLARITY + CORRECT DURATION
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1769,17 +1896,17 @@ canvas {
 /* ================== MOBILE DETECTION ================== */
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+const isAndroid = /Android/i.test(navigator.userAgent);
 
 /* ================== GLOBAL STATE ================== */
 let mediaRecorder;
 let recordedChunks = [];
 let playRecordingAudio = null;
 let lastRecordingURL = null;
-let audioContext, micSource, accSource, micGain, accGain;
+let audioContext, micSource, accSource, micGain, accGain, compressor, eqNode;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
-let referenceAudio = null;
 let autoStopTimer = null;
 
 /* ================== ELEMENTS ================== */
@@ -1822,7 +1949,7 @@ if (isMobile) {
 async function ensureAudioContext() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 44100,
+            sampleRate: 48000, // Higher sample rate for better quality
             latencyHint: 'interactive'
         });
     }
@@ -1910,7 +2037,69 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - FIXED: ORIGINAL SONG PLAYS BUT NOT RECORDED ================== */
+/* ================== MOBILE VOICE CLARITY FIX ================== */
+async function getOptimizedMicrophone() {
+    try {
+        // Try different microphone configurations for mobile
+        const constraints = {
+            audio: {
+                echoCancellation: isMobile ? false : true, // Disable on mobile for better voice
+                noiseSuppression: isMobile ? false : true, // Disable on mobile
+                autoGainControl: true, // Keep auto gain
+                channelCount: 1,
+                sampleRate: isMobile ? 48000 : 44100, // Higher for mobile
+                sampleSize: isMobile ? 24 : 16, // Better bit depth
+                volume: 1.0
+            },
+            video: false
+        };
+
+        // Try with constraints first
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (e) {
+            // Fallback to basic constraints
+            const basicConstraints = {
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: true,
+                    channelCount: 1
+                },
+                video: false
+            };
+            stream = await navigator.mediaDevices.getUserMedia(basicConstraints);
+        }
+        
+        return stream;
+    } catch (error) {
+        console.error("Microphone error:", error);
+        throw error;
+    }
+}
+
+/* ================== CREATE AUDIO ENHANCEMENT NODES ================== */
+function createAudioEnhancementNodes(audioCtx) {
+    // Create compressor for voice clarity
+    const compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -50;
+    compressor.knee.value = 40;
+    compressor.ratio.value = 12;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    
+    // Create EQ for voice clarity (boost highs, reduce lows)
+    const eqNode = audioCtx.createBiquadFilter();
+    eqNode.type = 'peaking';
+    eqNode.frequency.value = 3000; // Boost around 3kHz for clarity
+    eqNode.gain.value = isMobile ? 10 : 6; // More boost on mobile
+    eqNode.Q.value = 1;
+    
+    return { compressor, eqNode };
+}
+
+/* ================== RECORD - FIXED FOR MOBILE VOICE CLARITY ================== */
 recordBtn.onclick = async function() {
     if (isRecording) return;
     
@@ -1935,19 +2124,8 @@ recordBtn.onclick = async function() {
             console.log("Original song play error:", e);
         });
         
-        // Get microphone with OPTIMIZED settings
-        const micStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: false,
-                channelCount: 1,
-                sampleRate: 44100,
-                sampleSize: 16,
-                volume: 1.0
-            },
-            video: false
-        }).catch(err => {
+        // Get optimized microphone for mobile clarity
+        const micStream = await getOptimizedMicrophone().catch(err => {
             status.innerText = "❌ Microphone access required";
             resetUIOnError();
             throw err;
@@ -1963,22 +2141,30 @@ recordBtn.onclick = async function() {
         
         accSource = audioCtx.createBufferSource();
         accSource.buffer = accDecoded;
-        const songDuration = accDecoded.duration;
+        const songDuration = %%SONG_DURATION%% * 1000; // Use accurate duration from Python
         
-        // Create gain nodes
+        // Create gain nodes with mobile-specific settings
         micGain = audioCtx.createGain();
-        micGain.gain.value = 2.5;
+        micGain.gain.value = isMobile ? 3.0 : 2.5; // Higher gain for mobile
         
         accGain = audioCtx.createGain();
         accGain.gain.value = 0.25;
         
+        // Create audio enhancement nodes for voice clarity
+        const enhancement = createAudioEnhancementNodes(audioCtx);
+        compressor = enhancement.compressor;
+        eqNode = enhancement.eqNode;
+        
         // Create destination for recording
         const destination = audioCtx.createMediaStreamDestination();
         
-        // Connect ONLY microphone and accompaniment to destination
-        // Original song is NOT connected to destination
+        // Connect microphone through enhancement chain
         micSource.connect(micGain);
-        micGain.connect(destination);
+        micGain.connect(eqNode);
+        eqNode.connect(compressor);
+        compressor.connect(destination);
+        
+        // Connect accompaniment
         accSource.connect(accGain);
         accGain.connect(destination);
         
@@ -1992,8 +2178,8 @@ recordBtn.onclick = async function() {
             console.log("Accompaniment error:", e);
         }
         
-        // Create stream from canvas and mixed audio (microphone + accompaniment ONLY)
-        const canvasStream = canvas.captureStream(isMobile ? 25 : 30);
+        // Create stream from canvas and mixed audio (enhanced microphone + accompaniment)
+        const canvasStream = canvas.captureStream(isMobile ? 30 : 30);
         const mixedAudioStream = destination.stream;
         
         // Combine video and audio streams
@@ -2002,18 +2188,24 @@ recordBtn.onclick = async function() {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // Get supported MIME type
-        let mimeType = 'video/webm;codecs=vp8,opus';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
+        // Get best MIME type for the device
+        let mimeType = 'video/webm;codecs=vp9,opus';
+        if (isMobile && MediaRecorder.isTypeSupported('video/mp4')) {
+            mimeType = 'video/mp4'; // MP4 works better on mobile
+        } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+            mimeType = 'video/webm;codecs=vp8,opus';
+        } else if (MediaRecorder.isTypeSupported('video/webm')) {
             mimeType = 'video/webm';
         }
         
-        // Create MediaRecorder
-        mediaRecorder = new MediaRecorder(combinedStream, {
+        // Create MediaRecorder with optimized settings
+        const recorderOptions = {
             mimeType: mimeType,
-            audioBitsPerSecond: 128000,
-            videoBitsPerSecond: 2500000
-        });
+            audioBitsPerSecond: isMobile ? 192000 : 128000, // Higher bitrate for mobile
+            videoBitsPerSecond: isMobile ? 3000000 : 2500000
+        };
+        
+        mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
         
         recordedChunks = [];
         mediaRecorder.ondataavailable = e => {
@@ -2045,7 +2237,7 @@ recordBtn.onclick = async function() {
             originalAudio.pause();
             originalAudio.currentTime = 0;
             
-            // Create blob and URL
+            // Create blob with correct MIME type
             if (recordedChunks.length > 0) {
                 const blob = new Blob(recordedChunks, { type: mimeType });
                 const url = URL.createObjectURL(blob);
@@ -2057,9 +2249,10 @@ recordBtn.onclick = async function() {
                 finalDiv.style.display = "flex";
                 finalStatus.innerText = "✅ Recording Complete!";
                 
-                // Set download link
+                // Set download link with proper extension
                 const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                const fileName = songName + "_karaoke_recording" + (mimeType.includes('mp4') ? '.mp4' : '.webm');
+                const extension = mimeType.includes('mp4') ? '.mp4' : '.webm';
+                const fileName = songName + "_karaoke_recording" + extension;
                 downloadRecordingBtn.href = url;
                 downloadRecordingBtn.download = fileName;
                 
@@ -2092,18 +2285,18 @@ recordBtn.onclick = async function() {
             }
         };
         
-        // Start recording
-        mediaRecorder.start(100);
+        // Start recording with timeslice for better performance
+        mediaRecorder.start(250); // 250ms chunks
         
         status.innerText = "🎙 Recording... Original song playing for reference!";
         
-        // Auto-stop timer
+        // Accurate auto-stop timer using song duration from Python
         autoStopTimer = setTimeout(() => {
             if (isRecording) {
                 stopRecording();
                 status.innerText = "✅ Auto-stopped: Recording complete!";
             }
-        }, (songDuration * 1000) + 1000);
+        }, songDuration + 1000); // Add 1 second buffer
         
     } catch (error) {
         console.error("Recording error:", error);
@@ -2111,7 +2304,9 @@ recordBtn.onclick = async function() {
         resetUIOnError();
         
         if (isIOS && error.name === 'NotAllowedError') {
-            status.innerText = "📱 Allow microphone in Settings";
+            status.innerText = "📱 Allow microphone in Settings > Safari > Microphone";
+        } else if (isAndroid) {
+            status.innerText = "📱 Allow microphone permission in browser settings";
         }
     }
 };
@@ -2227,8 +2422,14 @@ function resetUIOnError() {
 
 /* ================== MOBILE TOUCH EVENTS ================== */
 document.addEventListener('touchstart', async () => {
-    if (isIOS) {
+    if (isIOS || isAndroid) {
         await ensureAudioContext();
+        // iOS/Android needs user gesture for audio
+        const silentAudio = new Audio();
+        silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+        silentAudio.play().then(() => {
+            silentAudio.pause();
+        }).catch(() => {});
     }
 }, { once: true });
 
@@ -2261,12 +2462,19 @@ accompanimentAudio.addEventListener('ended', () => {
 
 /* ================== WINDOW LOAD ================== */
 window.addEventListener('load', () => {
-    console.log("Karaoke Player Loaded - Original song plays during recording but not recorded");
+    console.log("Karaoke Player Loaded - Mobile voice clarity enhanced");
     status.innerText = "Ready 🎤 - Original song will play during recording";
     
     if (isMobile) {
-        console.log("Mobile device detected");
-        status.innerText = "📱 Ready - Use headphones for best experience";
+        console.log("Mobile device detected - Using optimized settings");
+        status.innerText = "📱 Ready - Tap screen first for best recording";
+        
+        // Pre-warm audio context for mobile
+        setTimeout(() => {
+            ensureAudioContext().then(() => {
+                console.log("Audio context ready for mobile");
+            });
+        }, 1000);
     }
 });
 
@@ -2295,6 +2503,26 @@ window.addEventListener('beforeunload', () => {
         audioContext.close();
     }
 });
+
+/* ================== MOBILE SPECIFIC FIXES ================== */
+if (isMobile) {
+    // Prevent default touch behaviors
+    document.addEventListener('touchmove', function(e) {
+        if (e.scale !== 1) { e.preventDefault(); }
+    }, { passive: false });
+    
+    // Prevent zoom
+    document.addEventListener('gesturestart', function(e) {
+        e.preventDefault();
+    });
+    
+    // Fix for iOS audio context
+    document.addEventListener('click', function() {
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+    }, { once: true });
+}
 </script>
 </body>
 </html>
@@ -2305,6 +2533,7 @@ window.addEventListener('beforeunload', () => {
     karaoke_html = karaoke_html.replace("%%ORIGINAL_B64%%", original_b64 or "")
     karaoke_html = karaoke_html.replace("%%ACCOMP_B64%%", accompaniment_b64 or "")
     karaoke_html = karaoke_html.replace("%%SONG_NAME%%", selected_song)
+    karaoke_html = karaoke_html.replace("%%SONG_DURATION%%", str(song_duration))
 
     # Back button logic
     if st.session_state.role in ["admin", "user"]:
