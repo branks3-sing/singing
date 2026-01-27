@@ -1638,20 +1638,17 @@ recordBtn.onclick = async () => {
     try {
         await ensureAudioContext();
         
-        // Stop any current playback
+        // ✅ IMPORTANT: Stop original audio playback
         originalAudio.pause();
-        accompanimentAudio.pause();
-        
-        // Reset positions
         originalAudio.currentTime = 0;
-        accompanimentAudio.currentTime = 0;
         
-        // Start playing original song for reference (BUT NOT IN RECORDING)
-        try {
-            await originalAudio.play();
-        } catch (e) {
-            console.log("Original play error:", e);
-        }
+        // ✅ FIXED: Create SEPARATE reference audio for user to listen (NOT in recording)
+        const referenceAudio = new Audio(originalAudio.src);
+        referenceAudio.volume = 0.7; // Slightly lower for reference
+        
+        // Stop accompaniment if playing
+        accompanimentAudio.pause();
+        accompanimentAudio.currentTime = 0;
         
         // ✅ FIXED: Get microphone with OPTIMAL SETTINGS FOR VOICE CLARITY
         const micStream = await navigator.mediaDevices.getUserMedia({ 
@@ -1662,14 +1659,13 @@ recordBtn.onclick = async () => {
                 channelCount: 1,
                 sampleRate: 48000,            // Higher sample rate
                 latency: 0,                   // Low latency
-                // Add these for better quality
                 sampleSize: 16,
                 volume: 1.0                   // Max volume
             },
             video: false
         });
         
-        // Create audio sources
+        // Create audio sources - ONLY MIC + ACCOMPANIMENT
         micSource = audioContext.createMediaStreamSource(micStream);
         
         // Load accompaniment audio
@@ -1682,10 +1678,10 @@ recordBtn.onclick = async () => {
         
         // ✅ FIXED: Create gain nodes for volume control - ADJUSTED FOR BETTER VOICE
         micGain = audioContext.createGain();
-        micGain.gain.value = 2.5;  // INCREASE VOICE VOLUME (was 1.0)
+        micGain.gain.value = 2.5;  // INCREASE VOICE VOLUME
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.2;  // REDUCE ACCOMPANIMENT VOLUME (was 0.5)
+        accGain.gain.value = 0.2;  // REDUCE ACCOMPANIMENT VOLUME
         
         // ✅ FIXED: Add compressor for better voice clarity
         compressor = audioContext.createDynamicsCompressor();
@@ -1702,7 +1698,7 @@ recordBtn.onclick = async () => {
         equalizer.gain.value = 8.0;        // Boost 8dB for clarity
         equalizer.Q.value = 1.0;
         
-        // Create destination for mixed audio
+        // Create destination for mixed audio - ONLY MIC + ACCOMPANIMENT
         const destination = audioContext.createMediaStreamDestination();
         
         // ✅ FIXED: Connect with audio processing chain
@@ -1716,7 +1712,10 @@ recordBtn.onclick = async () => {
         accSource.connect(accGain);
         accGain.connect(destination);
         
-        // Start accompaniment playback
+        // ✅ IMPORTANT: Start REFERENCE audio (separate, not in recording)
+        referenceAudio.play().catch(e => console.log("Reference play error:", e));
+        
+        // Start accompaniment playback (in recording)
         accSource.start();
         
         // Set up canvas
@@ -1724,7 +1723,7 @@ recordBtn.onclick = async () => {
         canvas.height = 1920;
         drawCanvas();
         
-        // Create combined stream (canvas video + mixed audio)
+        // Create combined stream (canvas video + mixed audio - ONLY MIC + ACCOMPANIMENT)
         const canvasStream = canvas.captureStream(30);
         const mixedAudioStream = destination.stream;
         
@@ -1755,6 +1754,10 @@ recordBtn.onclick = async () => {
         mediaRecorder.onstop = () => {
             cancelAnimationFrame(canvasRafId);
             
+            // Stop reference audio
+            referenceAudio.pause();
+            referenceAudio.currentTime = 0;
+            
             const blob = new Blob(recordedChunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
             
@@ -1763,7 +1766,7 @@ recordBtn.onclick = async () => {
             
             finalBg.src = mainBg.src;
             finalDiv.style.display = "flex";
-            finalStatus.innerText = "🎉 Recording Complete! Voice is now clear!";
+            finalStatus.innerText = "🎉 Recording Complete! Only your voice + music recorded!";
             
             // Download with song name
             const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
@@ -1806,13 +1809,14 @@ recordBtn.onclick = async () => {
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording... Voice clarity optimized!";
+        status.innerText = "🎙 Recording... Only your voice + background music!";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
         setTimeout(() => {
             if (isRecording) {
                 stopRecording();
+                referenceAudio.pause(); // Stop reference audio too
                 status.innerText = "✅ Recording completed automatically!";
             }
         }, songDuration + 1000);
@@ -1844,10 +1848,19 @@ function stopRecording() {
             try { accSource.stop(); } catch {}
         }
         
-        // Stop audio playback
+        // Stop any reference audio
+        const allAudios = document.querySelectorAll('audio');
+        allAudios.forEach(audio => {
+            if (!audio.id.includes('originalAudio') && !audio.id.includes('accompaniment')) {
+                audio.pause();
+                audio.currentTime = 0;
+            }
+        });
+        
+        // Stop main audio playback
         originalAudio.pause();
-        accompanimentAudio.pause();
         originalAudio.currentTime = 0;
+        accompanimentAudio.pause();
         accompanimentAudio.currentTime = 0;
         
         // Stop canvas drawing
@@ -1872,7 +1885,6 @@ function stopRecording() {
         console.error("Stop recording error:", error);
     }
 }
-
 /* ================== STOP BUTTON CLICK ================== */
 stopBtn.onclick = stopRecording;
 
