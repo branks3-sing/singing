@@ -1582,7 +1582,7 @@ async function ensureAudioContext() {
 
 /* ================== PLAY ORIGINAL (FAST RESPONSE) ================== */
 playBtn.onclick = function() {
-    // Immediate UI update
+    // ✅ FIXED: Remove async/await for faster response
     if (originalAudio.paused) {
         originalAudio.currentTime = 0;
         originalAudio.play().then(() => {
@@ -1590,7 +1590,7 @@ playBtn.onclick = function() {
             status.innerText = "🎵 Playing song...";
         }).catch(e => {
             console.log("Play error:", e);
-            status.innerText = "❌ Cannot play audio";
+            status.innerText = "❌ Click to allow audio";
         });
     } else {
         originalAudio.pause();
@@ -1600,11 +1600,14 @@ playBtn.onclick = function() {
     }
 };
 
-/* ================== CANVAS DRAW ================== */
+/* ================== CANVAS DRAW FOR MOBILE 9:16 ================== */
 function drawCanvas() {
+    if (!ctx) return;
+    
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Mobile-friendly 9:16 aspect ratio (1080x1920)
     const canvasW = canvas.width;
     const canvasH = canvas.height * 0.85;
 
@@ -1624,6 +1627,8 @@ function drawCanvas() {
     const y = 0;
 
     ctx.drawImage(mainBg, x, y, drawW, drawH);
+
+    /* LOGO - CLEAR AND VISIBLE */
     ctx.globalAlpha = 1;
     ctx.drawImage(logoImg, 100, 100, 100, 100);
     ctx.globalAlpha = 1;
@@ -1631,22 +1636,23 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - FAST BUTTON RESPONSE ================== */
+/* ================== RECORD - FAST RESPONSE VERSION ================== */
 recordBtn.onclick = function() {
+    // ✅ FIXED: Immediate UI update
     if (isRecording) return;
     
-    // IMMEDIATE UI UPDATE
+    // Immediately update UI
     isRecording = true;
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
     status.innerText = "🎙 Starting recording...";
     
-    // Start async process
-    startRecordingAsync();
+    // Start recording async
+    startRecordingProcess();
 };
 
-async function startRecordingAsync() {
+async function startRecordingProcess() {
     try {
         await ensureAudioContext();
         
@@ -1656,76 +1662,95 @@ async function startRecordingAsync() {
         originalAudio.currentTime = 0;
         accompanimentAudio.currentTime = 0;
         
-        // Clear previous timer
+        // Clear any previous timer
         if (autoStopTimer) {
             clearTimeout(autoStopTimer);
             autoStopTimer = null;
         }
         
-        // Create reference audio
+        // Create reference audio for user (NOT in recording)
         referenceAudio = new Audio(originalAudio.src);
         referenceAudio.volume = 0.8;
         
-        // Get microphone (simpler settings for speed)
+        // ✅ FIXED: Simpler microphone settings for faster response
         const micStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
                 echoCancellation: true,
                 noiseSuppression: true,
+                autoGainControl: true, // Enabled for better mobile
                 channelCount: 1,
-                sampleRate: 44100
+                sampleRate: 44100, // Standard rate
             },
             video: false
+        }).catch(err => {
+            console.error("Microphone error:", err);
+            status.innerText = "❌ Microphone access denied";
+            resetUI();
+            throw err;
         });
+        
+        // Update status immediately
+        status.innerText = "🎙 Setting up audio...";
         
         // Create audio sources
         micSource = audioContext.createMediaStreamSource(micStream);
         
-        // Load accompaniment
+        // Load accompaniment audio
         const accRes = await fetch(accompanimentAudio.src);
         const accBuf = await accRes.arrayBuffer();
         const accDecoded = await audioContext.decodeAudioData(accBuf);
         
         accSource = audioContext.createBufferSource();
         accSource.buffer = accDecoded;
+        
+        // Store song duration
         const songDuration = accDecoded.duration;
         
-        // Simple gain nodes (no complex processing for speed)
+        // Create gain nodes with mobile-friendly values
         micGain = audioContext.createGain();
-        micGain.gain.value = 2.0;
+        micGain.gain.value = 1.8; // Lower for mobile
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.25;
+        accGain.gain.value = 0.3;
         
-        // Create destination
+        // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
         
-        // Simple connection
+        // ✅ FIXED: Simpler audio chain for faster processing
         micSource.connect(micGain);
         micGain.connect(destination);
+        
         accSource.connect(accGain);
         accGain.connect(destination);
         
         // Start reference audio
-        referenceAudio.play().catch(e => console.log("Reference audio:", e));
+        referenceAudio.play().catch(e => {
+            console.log("Reference audio play error:", e);
+        });
         
-        // Start accompaniment
+        // Update status
+        status.innerText = "🎙 Recording starting...";
+        
+        // Start accompaniment playback
         setTimeout(() => {
             try {
                 accSource.start();
+                status.innerText = "🎙 Recording... Sing along!";
             } catch(e) {
-                console.log("Accompaniment error:", e);
-                resetUIOnError();
+                console.log("Accompaniment start error:", e);
+                status.innerText = "❌ Could not start music";
+                resetUI();
                 return;
             }
-        }, 50);
+        }, 50); // Smaller delay
         
-        // Canvas setup
+        // Set up canvas
         canvas.width = 1080;
         canvas.height = 1920;
         drawCanvas();
         
-        // Create stream
-        const canvasStream = canvas.captureStream(30);
+        // Create combined stream
+        const canvasStream = canvas.captureStream(25); // Lower FPS for mobile
         const mixedAudioStream = destination.stream;
         
         const combinedStream = new MediaStream([
@@ -1733,16 +1758,12 @@ async function startRecordingAsync() {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // Simple MediaRecorder
+        // ✅ FIXED: Use default MediaRecorder for compatibility
         const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') 
             ? 'video/webm;codecs=vp8,opus'
             : 'video/webm';
         
-        mediaRecorder = new MediaRecorder(combinedStream, {
-            mimeType: mimeType,
-            videoBitsPerSecond: 1500000,
-            audioBitsPerSecond: 128000
-        });
+        mediaRecorder = new MediaRecorder(combinedStream);
         
         recordedChunks = [];
         mediaRecorder.ondataavailable = e => {
@@ -1752,7 +1773,9 @@ async function startRecordingAsync() {
         };
         
         mediaRecorder.onstop = () => {
-            cancelAnimationFrame(canvasRafId);
+            if (canvasRafId) {
+                cancelAnimationFrame(canvasRafId);
+            }
             
             // Stop reference audio
             if (referenceAudio) {
@@ -1761,66 +1784,79 @@ async function startRecordingAsync() {
                 referenceAudio = null;
             }
             
-            // Create blob
-            if (recordedChunks.length > 0) {
-                const blob = new Blob(recordedChunks, { type: mimeType });
-                const url = URL.createObjectURL(blob);
-                
-                if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
-                lastRecordingURL = url;
-                
-                finalBg.src = mainBg.src;
-                finalDiv.style.display = "flex";
-                
-                // Set download link
-                const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                const fileName = songName + "_recording.webm";
-                downloadRecordingBtn.href = url;
-                downloadRecordingBtn.download = fileName;
-                
-                // Playback button
-                playRecordingBtn.onclick = () => {
-                    if (!isPlayingRecording) {
-                        if (playRecordingAudio) {
-                            playRecordingAudio.pause();
-                            playRecordingAudio = null;
-                        }
-                        playRecordingAudio = new Audio(url);
-                        playRecordingAudio.play();
-                        playRecordingBtn.innerText = "⏹ Stop";
-                        isPlayingRecording = true;
-                        
-                        playRecordingAudio.onended = () => {
-                            playRecordingBtn.innerText = "▶ Play";
-                            isPlayingRecording = false;
-                        };
-                    } else {
-                        if (playRecordingAudio) {
-                            playRecordingAudio.pause();
-                            playRecordingAudio.currentTime = 0;
-                        }
+            if (recordedChunks.length === 0) {
+                console.warn("No recorded data!");
+                finalStatus.innerText = "❌ No recording data";
+                return;
+            }
+            
+            const blob = new Blob(recordedChunks, { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            
+            if (lastRecordingURL) {
+                try {
+                    URL.revokeObjectURL(lastRecordingURL);
+                } catch(e) {
+                    console.log("Error revoking URL:", e);
+                }
+            }
+            lastRecordingURL = url;
+            
+            finalBg.src = mainBg.src;
+            finalDiv.style.display = "flex";
+            finalStatus.innerText = "🎉 Recording Complete!";
+            
+            // Create download link
+            const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
+            const fileName = songName + "_karaoke_recording.webm";
+            
+            downloadRecordingBtn.href = url;
+            downloadRecordingBtn.download = fileName;
+            
+            // Playback button
+            playRecordingBtn.onclick = function() {
+                if (!isPlayingRecording) {
+                    if (playRecordingAudio) {
+                        playRecordingAudio.pause();
+                        playRecordingAudio.currentTime = 0;
+                        playRecordingAudio = null;
+                    }
+                    playRecordingAudio = new Audio(url);
+                    playRecordingAudio.volume = 1.0;
+                    playRecordingAudio.play();
+                    playRecordingBtn.innerText = "⏹ Stop";
+                    isPlayingRecording = true;
+                    
+                    playRecordingAudio.onended = () => {
                         playRecordingBtn.innerText = "▶ Play";
                         isPlayingRecording = false;
+                    };
+                } else {
+                    if (playRecordingAudio) {
+                        playRecordingAudio.pause();
+                        playRecordingAudio.currentTime = 0;
                     }
-                };
-            }
+                    playRecordingBtn.innerText = "▶ Play";
+                    isPlayingRecording = false;
+                }
+            };
         };
         
         // Start recording
         mediaRecorder.start();
-        status.innerText = "🎙 Recording... Sing along!";
         
-        // Auto-stop
+        // Auto-stop when accompaniment ends
         autoStopTimer = setTimeout(() => {
             if (isRecording) {
                 stopRecording();
+                status.innerText = "✅ Recording completed!";
             }
         }, (songDuration * 1000) + 500);
         
     } catch (error) {
-        console.error("Recording error:", error);
-        status.innerText = "❌ Recording failed";
-        resetUIOnError();
+        console.error("Recording setup error:", error);
+        status.innerText = "❌ Recording failed: " + error.message;
+        resetUI();
     }
 }
 
@@ -1828,45 +1864,67 @@ async function startRecordingAsync() {
 function stopRecording() {
     if (!isRecording) return;
     
-    // Clear timer
-    if (autoStopTimer) {
-        clearTimeout(autoStopTimer);
-        autoStopTimer = null;
+    try {
+        // Clear auto-stop timer
+        if (autoStopTimer) {
+            clearTimeout(autoStopTimer);
+            autoStopTimer = null;
+        }
+        
+        // Stop media recorder if active
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        
+        // Stop audio sources
+        if (accSource) {
+            try { 
+                accSource.stop(); 
+            } catch(e) {
+                console.log("Acc source stop error:", e);
+            }
+        }
+        
+        // Stop reference audio
+        if (referenceAudio) {
+            referenceAudio.pause();
+            referenceAudio.currentTime = 0;
+            referenceAudio = null;
+        }
+        
+        // Stop main audio
+        originalAudio.pause();
+        accompanimentAudio.pause();
+        originalAudio.currentTime = 0;
+        accompanimentAudio.currentTime = 0;
+        
+        // Stop canvas drawing
+        if (canvasRafId) {
+            cancelAnimationFrame(canvasRafId);
+            canvasRafId = null;
+        }
+        
+        // Disconnect audio nodes
+        setTimeout(() => {
+            try {
+                if (micSource) micSource.disconnect();
+                if (micGain) micGain.disconnect();
+                if (accSource) accSource.disconnect();
+                if (accGain) accGain.disconnect();
+            } catch(e) {
+                console.log("Disconnect error:", e);
+            }
+        }, 50);
+        
+        // Update UI
+        isRecording = false;
+        stopBtn.style.display = "none";
+        status.innerText = "⏹ Processing...";
+        
+    } catch (error) {
+        console.error("Stop recording error:", error);
+        status.innerText = "❌ Error stopping recording";
     }
-    
-    // Stop media recorder
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-    }
-    
-    // Stop audio sources
-    if (accSource) {
-        try { accSource.stop(); } catch(e) {}
-    }
-    
-    // Stop reference audio
-    if (referenceAudio) {
-        referenceAudio.pause();
-        referenceAudio.currentTime = 0;
-        referenceAudio = null;
-    }
-    
-    // Stop main audio
-    originalAudio.pause();
-    accompanimentAudio.pause();
-    originalAudio.currentTime = 0;
-    accompanimentAudio.currentTime = 0;
-    
-    // Stop canvas
-    if (canvasRafId) {
-        cancelAnimationFrame(canvasRafId);
-        canvasRafId = null;
-    }
-    
-    // Update UI
-    isRecording = false;
-    stopBtn.style.display = "none";
-    status.innerText = "✅ Recording complete!";
 }
 
 /* ================== STOP BUTTON CLICK ================== */
@@ -1881,6 +1939,7 @@ newRecordingBtn.onclick = function() {
     // Cleanup
     if (playRecordingAudio) {
         playRecordingAudio.pause();
+        playRecordingAudio.currentTime = 0;
         playRecordingAudio = null;
     }
     
@@ -1890,11 +1949,17 @@ newRecordingBtn.onclick = function() {
     originalAudio.currentTime = 0;
     accompanimentAudio.currentTime = 0;
     
-    // Clean reference
+    // Clean reference audio
     if (referenceAudio) {
         referenceAudio.pause();
         referenceAudio.currentTime = 0;
         referenceAudio = null;
+    }
+    
+    // Clear timer
+    if (autoStopTimer) {
+        clearTimeout(autoStopTimer);
+        autoStopTimer = null;
     }
     
     // Reset UI
@@ -1911,13 +1976,17 @@ newRecordingBtn.onclick = function() {
     
     // Release URL
     if (lastRecordingURL) {
-        URL.revokeObjectURL(lastRecordingURL);
+        try {
+            URL.revokeObjectURL(lastRecordingURL);
+        } catch(e) {
+            console.log("Error revoking URL:", e);
+        }
         lastRecordingURL = null;
     }
 };
 
 /* ================== HELPER FUNCTIONS ================== */
-function resetUIOnError() {
+function resetUI() {
     isRecording = false;
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
@@ -1936,17 +2005,24 @@ function resetUIOnError() {
 }
 
 /* ================== INITIAL SETUP ================== */
-document.addEventListener('visibilitychange', async () => {
+// Handle page visibility
+document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
-        await ensureAudioContext();
+        if (audioContext && audioContext.state === "suspended") {
+            audioContext.resume();
+        }
     }
 });
 
-document.addEventListener('touchstart', async () => {
-    await ensureAudioContext();
+// Touch event for mobile - improved
+document.addEventListener('touchstart', function() {
+    if (audioContext && audioContext.state === "suspended") {
+        audioContext.resume();
+    }
 }, { once: true });
 
-originalAudio.addEventListener('ended', () => {
+// Auto-stop original audio when it ends
+originalAudio.addEventListener('ended', function() {
     if (playBtn.innerText === "⏹ Stop") {
         playBtn.innerText = "▶ Play";
         status.innerText = "✅ Song completed";
@@ -1959,9 +2035,35 @@ originalAudio.addEventListener('ended', () => {
     }
 });
 
-window.addEventListener('load', () => {
-    console.log("Karaoke Player Loaded - Fast Buttons");
+// Handle page unload
+window.addEventListener('beforeunload', function() {
+    // Cleanup
+    if (referenceAudio) {
+        referenceAudio.pause();
+        referenceAudio.currentTime = 0;
+    }
+    if (lastRecordingURL) {
+        try {
+            URL.revokeObjectURL(lastRecordingURL);
+        } catch(e) {
+            console.log("Error revoking URL:", e);
+        }
+    }
+    if (autoStopTimer) {
+        clearTimeout(autoStopTimer);
+    }
+});
+
+window.addEventListener('load', function() {
+    console.log("Karaoke Player Loaded - Fast Response Version");
     status.innerText = "Ready 🎤";
+    
+    // ✅ FIXED: Pre-warm audio context for faster response
+    setTimeout(() => {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }, 1000);
 });
 </script>
 </body>
