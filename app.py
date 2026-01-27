@@ -1543,6 +1543,8 @@ let audioContext, micSource, accSource, micGain, accGain, compressor, equalizer;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
+let referenceAudio = null;
+let microphoneStream = null;
 
 /* ================== ELEMENTS ================== */
 const playBtn = document.getElementById("playBtn");
@@ -1572,6 +1574,8 @@ logoImg.src = document.getElementById("logoImg").src;
 async function ensureAudioContext() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Set optimal audio context settings
+        audioContext.suspend();
     }
     if (audioContext.state === "suspended") {
         await audioContext.resume();
@@ -1632,44 +1636,97 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - FIXED VERSION ================== */
+/* ================== CLEANUP AUDIO ================== */
+function cleanupAudio() {
+    try {
+        // Stop and disconnect all audio nodes
+        if (accSource) {
+            try { accSource.stop(); } catch(e) {}
+            try { accSource.disconnect(); } catch(e) {}
+        }
+        
+        if (micSource) {
+            try { micSource.disconnect(); } catch(e) {}
+        }
+        
+        if (micGain) {
+            try { micGain.disconnect(); } catch(e) {}
+        }
+        
+        if (equalizer) {
+            try { equalizer.disconnect(); } catch(e) {}
+        }
+        
+        if (compressor) {
+            try { compressor.disconnect(); } catch(e) {}
+        }
+        
+        if (accGain) {
+            try { accGain.disconnect(); } catch(e) {}
+        }
+        
+        // Stop microphone stream
+        if (microphoneStream) {
+            microphoneStream.getTracks().forEach(track => track.stop());
+            microphoneStream = null;
+        }
+        
+        // Stop reference audio
+        if (referenceAudio) {
+            referenceAudio.pause();
+            referenceAudio.currentTime = 0;
+            referenceAudio = null;
+        }
+        
+        // Stop all audio elements
+        originalAudio.pause();
+        originalAudio.currentTime = 0;
+        accompanimentAudio.pause();
+        accompanimentAudio.currentTime = 0;
+        
+        // Stop canvas
+        if (canvasRafId) {
+            cancelAnimationFrame(canvasRafId);
+        }
+        
+    } catch (error) {
+        console.error("Cleanup error:", error);
+    }
+}
+
+/* ================== RECORD - OPTIMIZED VERSION (NO VOICE BREAK) ================== */
 recordBtn.onclick = async () => {
     if (isRecording) return;
     
     try {
         await ensureAudioContext();
         
-        // Stop any current playback
-        originalAudio.pause();
-        accompanimentAudio.pause();
+        // Cleanup any previous audio
+        cleanupAudio();
         
-        // Reset positions
-        originalAudio.currentTime = 0;
-        accompanimentAudio.currentTime = 0;
+        // ✅ IMPORTANT: Create reference audio FIRST
+        referenceAudio = new Audio(originalAudio.src);
+        referenceAudio.volume = 0.7; // Lower volume for reference
         
-        // ✅ CRITICAL FIX: Create a SEPARATE reference audio that user can hear but WON'T be recorded
-        const referenceAudio = new Audio(originalAudio.src);
-        referenceAudio.volume = 0.8; // Reference volume
-        
-        // ✅ FIXED: Get microphone with OPTIMAL SETTINGS FOR VOICE CLARITY
-        // IMPORTANT: Use echoCancellation: true and autoGainControl: false
-        const micStream = await navigator.mediaDevices.getUserMedia({ 
+        // ✅ OPTIMIZED: Get microphone with BETTER SETTINGS
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                echoCancellation: true,      // IMPORTANT: Enable echo cancellation
-                noiseSuppression: true,      // Keep enabled
-                autoGainControl: false,      // Disable auto-gain
-                channelCount: 1,
-                sampleRate: 48000,
-                sampleSize: 16,
-                volume: 1.0
+                echoCancellation: true,      // Enable for cleaner voice
+                noiseSuppression: true,      // Reduce background noise
+                autoGainControl: false,      // Manual control
+                channelCount: 1,             // Mono for voice
+                sampleRate: 44100,           // Standard CD quality
+                sampleSize: 16,              // Standard bit depth
+                latency: 0.01,               // Low latency
+                volume: 1.0                  // Max volume
             },
             video: false
         });
         
         // Create audio sources
-        micSource = audioContext.createMediaStreamSource(micStream);
+        micSource = audioContext.createMediaStreamSource(microphoneStream);
         
-        // Load accompaniment audio
+        // Load accompaniment audio with better handling
         const accRes = await fetch(accompanimentAudio.src);
         const accBuf = await accRes.arrayBuffer();
         const accDecoded = await audioContext.decodeAudioData(accBuf);
@@ -1677,45 +1734,47 @@ recordBtn.onclick = async () => {
         accSource = audioContext.createBufferSource();
         accSource.buffer = accDecoded;
         
-        // Create gain nodes
+        // ✅ OPTIMIZED: Create gain nodes with SMOOTHER values
         micGain = audioContext.createGain();
-        micGain.gain.value = 2.5;  // Voice volume
+        micGain.gain.value = 1.8;  // Reduced from 2.5 for smoother voice
         
         accGain = audioContext.createGain();
-        accGain.gain.value = 0.3;  // Accompaniment volume
+        accGain.gain.value = 0.4;  // Increased from 0.3 for better balance
         
-        // Add compressor for voice clarity
+        // ✅ OPTIMIZED: Smoother compressor settings
         compressor = audioContext.createDynamicsCompressor();
-        compressor.threshold.value = -50;
-        compressor.knee.value = 40;
-        compressor.ratio.value = 12;
-        compressor.attack.value = 0.003;
-        compressor.release.value = 0.25;
+        compressor.threshold.value = -30;    // Higher threshold (was -50)
+        compressor.knee.value = 20;          // Smoother knee (was 40)
+        compressor.ratio.value = 8;          // Lower ratio (was 12)
+        compressor.attack.value = 0.01;      // Slower attack (was 0.003)
+        compressor.release.value = 0.3;      // Slower release (was 0.25)
         
-        // Add equalizer for voice frequencies
+        // ✅ OPTIMIZED: Smoother equalizer
         equalizer = audioContext.createBiquadFilter();
         equalizer.type = "peaking";
-        equalizer.frequency.value = 2000;
-        equalizer.gain.value = 8.0;
-        equalizer.Q.value = 1.0;
+        equalizer.frequency.value = 1800;    // Slightly lower frequency
+        equalizer.gain.value = 4.0;          // Lower gain (was 8.0)
+        equalizer.Q.value = 0.8;             // Smoother Q (was 1.0)
         
-        // Create destination for mixed audio (ONLY MIC + ACCOMPANIMENT)
+        // Create destination for mixed audio
         const destination = audioContext.createMediaStreamDestination();
         
-        // Connect audio chain: Voice only
+        // ✅ OPTIMIZED: Connect audio chain with PROPER routing
         micSource.connect(micGain);
         micGain.connect(equalizer);
         equalizer.connect(compressor);
         compressor.connect(destination);
         
-        // Accompaniment only
         accSource.connect(accGain);
         accGain.connect(destination);
         
-        // ✅ IMPORTANT: Start reference audio (separate, NOT connected to destination)
-        referenceAudio.play().catch(e => console.log("Reference audio error:", e));
+        // ✅ IMPORTANT: Start reference audio BEFORE accompaniment
+        referenceAudio.play().catch(e => console.log("Reference audio:", e));
         
-        // Start accompaniment playback (will be recorded)
+        // Small delay to ensure reference audio is playing
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Start accompaniment playback
         accSource.start();
         
         // Set up canvas
@@ -1723,8 +1782,8 @@ recordBtn.onclick = async () => {
         canvas.height = 1920;
         drawCanvas();
         
-        // Create combined stream (canvas video + mixed audio)
-        const canvasStream = canvas.captureStream(30);
+        // Create combined stream
+        const canvasStream = canvas.captureStream(25); // Reduced FPS for smoother
         const mixedAudioStream = destination.stream;
         
         const combinedStream = new MediaStream([
@@ -1732,19 +1791,22 @@ recordBtn.onclick = async () => {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // Setup MediaRecorder
+        // ✅ OPTIMIZED: MediaRecorder with BETTER settings
         const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
             ? 'video/webm;codecs=vp9,opus'
+            : MediaRecorder.isTypeSupported('video/mp4') 
+            ? 'video/mp4'
             : 'video/webm';
         
         mediaRecorder = new MediaRecorder(combinedStream, {
             mimeType: mimeType,
-            videoBitsPerSecond: 2500000,
-            audioBitsPerSecond: 192000
+            videoBitsPerSecond: 1500000,    // Reduced for smoother
+            audioBitsPerSecond: 128000,     // Standard bitrate
+            audioSampleRate: 44100          // Standard sample rate
         });
         
         recordedChunks = [];
-        mediaRecorder.ondataavailable = e => {
+        mediaRecorder.ondataavailable = (e) => {
             if (e.data.size > 0) {
                 recordedChunks.push(e.data);
             }
@@ -1754,8 +1816,11 @@ recordBtn.onclick = async () => {
             cancelAnimationFrame(canvasRafId);
             
             // Stop reference audio
-            referenceAudio.pause();
-            referenceAudio.currentTime = 0;
+            if (referenceAudio) {
+                referenceAudio.pause();
+                referenceAudio.currentTime = 0;
+                referenceAudio = null;
+            }
             
             const blob = new Blob(recordedChunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
@@ -1765,7 +1830,7 @@ recordBtn.onclick = async () => {
             
             finalBg.src = mainBg.src;
             finalDiv.style.display = "flex";
-            finalStatus.innerText = "🎉 Recording Complete!";
+            finalStatus.innerText = "🎉 Recording Complete - Smooth Voice!";
             
             // Download with song name
             const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
@@ -1800,29 +1865,32 @@ recordBtn.onclick = async () => {
             };
         };
         
-        // Start recording
-        mediaRecorder.start();
+        // ✅ OPTIMIZED: Start recording with timeslice for smoother chunks
+        mediaRecorder.start(100); // 100ms timeslice for smoother recording
         
         // Update UI
         isRecording = true;
         playBtn.style.display = "none";
         recordBtn.style.display = "none";
         stopBtn.style.display = "inline-block";
-        status.innerText = "🎙 Recording... Sing along!";
+        status.innerText = "🎙 Recording... Voice is smooth!";
         
         // Auto-stop when accompaniment ends
         const songDuration = accSource.buffer.duration * 1000;
         setTimeout(() => {
             if (isRecording) {
                 stopRecording();
-                status.innerText = "✅ Recording completed!";
+                status.innerText = "✅ Recording completed smoothly!";
             }
-        }, songDuration + 500);
+        }, songDuration + 1000);
         
     } catch (error) {
         console.error("Recording error:", error);
         status.innerText = "❌ Recording failed: " + error.message;
         isRecording = false;
+        
+        // Cleanup on error
+        cleanupAudio();
         
         // Reset UI
         playBtn.style.display = "inline-block";
@@ -1841,34 +1909,13 @@ function stopRecording() {
             mediaRecorder.stop();
         }
         
-        // Stop audio sources
-        if (accSource) {
-            try { accSource.stop(); } catch {}
-        }
-        
-        // Stop all audio
-        originalAudio.pause();
-        accompanimentAudio.pause();
-        originalAudio.currentTime = 0;
-        accompanimentAudio.currentTime = 0;
-        
-        // Stop canvas
-        if (canvasRafId) {
-            cancelAnimationFrame(canvasRafId);
-        }
-        
-        // Disconnect audio nodes
-        if (micSource) micSource.disconnect();
-        if (micGain) micGain.disconnect();
-        if (equalizer) equalizer.disconnect();
-        if (compressor) compressor.disconnect();
-        if (accSource) accSource.disconnect();
-        if (accGain) accGain.disconnect();
+        // Cleanup audio
+        cleanupAudio();
         
         // Update UI
         isRecording = false;
         stopBtn.style.display = "none";
-        status.innerText = "⏹ Processing...";
+        status.innerText = "⏹ Processing recording...";
         
     } catch (error) {
         console.error("Stop error:", error);
@@ -1888,11 +1935,8 @@ newRecordingBtn.onclick = () => {
         playRecordingAudio = null;
     }
     
-    // Reset audio
-    originalAudio.pause();
-    accompanimentAudio.pause();
-    originalAudio.currentTime = 0;
-    accompanimentAudio.currentTime = 0;
+    // Cleanup audio
+    cleanupAudio();
     
     // Reset UI
     playBtn.style.display = "inline-block";
@@ -1911,6 +1955,11 @@ newRecordingBtn.onclick = () => {
         URL.revokeObjectURL(lastRecordingURL);
         lastRecordingURL = null;
     }
+    
+    // Reset audio context if needed
+    if (audioContext && audioContext.state === 'running') {
+        audioContext.suspend();
+    }
 };
 
 /* ================== INITIAL SETUP ================== */
@@ -1918,6 +1967,11 @@ newRecordingBtn.onclick = () => {
 document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible') {
         await ensureAudioContext();
+    } else {
+        // Cleanup when page is hidden
+        if (isRecording) {
+            stopRecording();
+        }
     }
 });
 
@@ -1940,9 +1994,14 @@ originalAudio.addEventListener('ended', () => {
     }
 });
 
+// Prevent audio context suspension
+document.addEventListener('click', async () => {
+    await ensureAudioContext();
+});
+
 window.addEventListener('load', () => {
-    console.log("Karaoke Player Loaded");
-    status.innerText = "Ready 🎤";
+    console.log("Karaoke Player Loaded - Smooth Voice Version");
+    status.innerText = "Ready 🎤 - Smooth Voice Enabled";
 });
 </script>
 </body>
