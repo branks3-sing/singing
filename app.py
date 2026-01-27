@@ -20,6 +20,7 @@ def ensure_logo_exists():
     
     logo_path = os.path.join(logo_dir, "logoo.png")
     
+    # If logo doesn't exist locally, try to download from GitHub
     if not os.path.exists(logo_path):
         try:
             logo_url = "https://github.com/Swarna-0/karaoke_songs-/raw/main/media/logo/logoo.png"
@@ -29,6 +30,7 @@ def ensure_logo_exists():
                     f.write(response.content)
                 print(f"✅ Logo downloaded from GitHub")
             else:
+                # Create a simple placeholder logo
                 img = Image.new('RGB', (512, 512), color='#1E3A8A')
                 d = ImageDraw.Draw(img)
                 d.text((200, 220), "🎤", fill='white', font_size=100)
@@ -36,17 +38,20 @@ def ensure_logo_exists():
                 print(f"✅ Created placeholder logo")
         except Exception as e:
             print(f"⚠️ Could not download logo: {e}")
+            # Create a minimal placeholder
             with open(logo_path, 'wb') as f:
                 f.write(b'')
     
     return logo_path
 
+# Try to load logo for page icon
 try:
     logo_path = ensure_logo_exists()
     page_icon = Image.open(logo_path)
 except:
-    page_icon = "𝄞"
+    page_icon = "𝄞"  # Fallback to emoji if logo fails
 
+# Set page config with logo as icon
 st.set_page_config(
     page_title="Sing Along",
     page_icon=page_icon,
@@ -54,12 +59,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# --------- CONFIG: set your deployed app URL here ----------
 APP_URL = "www.branks3.com"
 
+# 🔒 SECURITY: Environment Variables for Password Hashes
 ADMIN_HASH = os.getenv("ADMIN_HASH", "")
 USER1_HASH = os.getenv("USER1_HASH", "")
 USER2_HASH = os.getenv("USER2_HASH", "")
 
+# Base directories
 base_dir = os.getcwd()
 media_dir = os.path.join(base_dir, "media")
 songs_dir = os.path.join(media_dir, "songs")
@@ -69,13 +77,16 @@ shared_links_dir = os.path.join(media_dir, "shared_links")
 metadata_path = os.path.join(media_dir, "song_metadata.json")
 session_db_path = os.path.join(base_dir, "session_data.db")
 
+# Create directories
 os.makedirs(songs_dir, exist_ok=True)
 os.makedirs(lyrics_dir, exist_ok=True)
 os.makedirs(logo_dir, exist_ok=True)
 os.makedirs(shared_links_dir, exist_ok=True)
 
-@st.cache_data(ttl=5)
+# =============== CACHED FUNCTIONS FOR PERFORMANCE ===============
+@st.cache_data(ttl=5)  # Cache for 5 seconds
 def get_song_files_cached():
+    """Get list of song files with caching for faster loading"""
     songs = []
     if not os.path.exists(songs_dir):
         return songs
@@ -88,13 +99,17 @@ def get_song_files_cached():
 
 @st.cache_data(ttl=5)
 def get_shared_links_cached():
+    """Get shared links with caching"""
     return load_shared_links()
 
 @st.cache_data(ttl=5)
 def get_metadata_cached():
+    """Get metadata with caching"""
     return load_metadata()
 
+# =============== PERSISTENT SESSION DATABASE ===============
 def init_session_db():
+    """Initialize SQLite database for persistent sessions"""
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
@@ -120,6 +135,7 @@ def init_session_db():
         pass
 
 def save_session_to_db():
+    """Save current session to database"""
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
@@ -140,6 +156,7 @@ def save_session_to_db():
         pass
 
 def load_session_from_db():
+    """Load session from database"""
     try:
         session_id = st.session_state.get('session_id', 'default')
         conn = sqlite3.connect(session_db_path)
@@ -163,6 +180,7 @@ def load_session_from_db():
         pass
 
 def save_shared_link_to_db(song_name, shared_by):
+    """Save shared link to database"""
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
@@ -176,6 +194,7 @@ def save_shared_link_to_db(song_name, shared_by):
         pass
 
 def delete_shared_link_from_db(song_name):
+    """Delete shared link from database"""
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
@@ -186,6 +205,7 @@ def delete_shared_link_from_db(song_name):
         pass
 
 def load_shared_links_from_db():
+    """Load shared links from database"""
     links = {}
     try:
         conn = sqlite3.connect(session_db_path)
@@ -201,6 +221,7 @@ def load_shared_links_from_db():
     return links
 
 def save_metadata_to_db(song_name, uploaded_by):
+    """Save metadata to database"""
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
@@ -214,6 +235,7 @@ def save_metadata_to_db(song_name, uploaded_by):
         pass
 
 def delete_metadata_from_db(song_name):
+    """Delete metadata from database"""
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
@@ -224,6 +246,7 @@ def delete_metadata_from_db(song_name):
         pass
 
 def load_metadata_from_db():
+    """Load metadata from database"""
     metadata = {}
     try:
         conn = sqlite3.connect(session_db_path)
@@ -238,8 +261,10 @@ def load_metadata_from_db():
         pass
     return metadata
 
+# Initialize database
 init_session_db()
 
+# =============== HELPER FUNCTIONS ===============
 def file_to_base64(path):
     if os.path.exists(path):
         with open(path, "rb") as f:
@@ -250,6 +275,7 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def load_metadata():
+    """Load metadata from both file and database"""
     file_metadata = {}
     if os.path.exists(metadata_path):
         try:
@@ -258,30 +284,40 @@ def load_metadata():
         except:
             file_metadata = {}
     
+    # Merge with database metadata
     db_metadata = load_metadata_from_db()
     file_metadata.update(db_metadata)
     return file_metadata
 
 def save_metadata(data):
+    """Save metadata to both file and database"""
+    # Save to file
     with open(metadata_path, "w") as f:
         json.dump(data, f, indent=2)
     
+    # Save to database
     for song_name, info in data.items():
         uploaded_by = info.get("uploaded_by", "unknown")
         save_metadata_to_db(song_name, uploaded_by)
 
 def delete_metadata(song_name):
+    """Delete metadata from both file and database"""
+    # Load existing metadata
     metadata = load_metadata()
     
+    # Remove from metadata
     if song_name in metadata:
         del metadata[song_name]
     
+    # Save updated metadata to file
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
     
+    # Delete from database
     delete_metadata_from_db(song_name)
 
 def load_shared_links():
+    """Load shared links from both file and database"""
     file_links = {}
     if os.path.exists(shared_links_dir):
         for filename in os.listdir(shared_links_dir):
@@ -296,44 +332,61 @@ def load_shared_links():
                 except:
                     pass
     
+    # Merge with database links
     db_links = load_shared_links_from_db()
     file_links.update(db_links)
     return file_links
 
 def save_shared_link(song_name, link_data):
+    """Save shared link to both file and database"""
+    # Save to file
     filepath = os.path.join(shared_links_dir, f"{song_name}.json")
     with open(filepath, 'w') as f:
         json.dump(link_data, f)
     
+    # Save to database
     shared_by = link_data.get("shared_by", "unknown")
     save_shared_link_to_db(song_name, shared_by)
 
 def delete_shared_link(song_name):
+    """Delete shared link from both file and database"""
+    # Delete from file
     filepath = os.path.join(shared_links_dir, f"{song_name}.json")
     if os.path.exists(filepath):
         os.remove(filepath)
     
+    # Delete from database
     delete_shared_link_from_db(song_name)
 
+def get_uploaded_songs(show_unshared=False):
+    """Get list of uploaded songs"""
+    return get_song_files_cached()
+
 def delete_song_files(song_name):
+    """Delete all files related to a song"""
     try:
+        # Delete original song file
         original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
         if os.path.exists(original_path):
             os.remove(original_path)
         
+        # Delete accompaniment file
         acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
         if os.path.exists(acc_path):
             os.remove(acc_path)
         
+        # Delete lyrics image files
         for ext in [".jpg", ".jpeg", ".png"]:
             lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{ext}")
             if os.path.exists(lyrics_path):
                 os.remove(lyrics_path)
         
+        # Delete shared link file
         shared_link_path = os.path.join(shared_links_dir, f"{song_name}.json")
         if os.path.exists(shared_link_path):
             os.remove(shared_link_path)
         
+        # Clear cache
         get_song_files_cached.clear()
         get_shared_links_cached.clear()
         get_metadata_cached.clear()
@@ -344,34 +397,43 @@ def delete_song_files(song_name):
         return False
 
 def check_and_create_session_id():
+    """Create unique session ID if not exists"""
     if 'session_id' not in st.session_state:
         import uuid
         st.session_state.session_id = str(uuid.uuid4())
 
+# =============== FAST SONG PLAYER NAVIGATION ===============
 def open_song_player(song_name):
+    """Fast function to open song player"""
     st.session_state.selected_song = song_name
     st.session_state.page = "Song Player"
     st.query_params["song"] = quote(song_name)
     save_session_to_db()
     st.rerun()
 
+# =============== FIXED: QUERY PARAMETER PROCESSING ===============
 def process_query_params():
     query_params = st.query_params
 
     if "song" in query_params:
         song_from_url = unquote(query_params["song"])
 
+        # Always set song from URL
         st.session_state.selected_song = song_from_url
         st.session_state.page = "Song Player"
 
+        # Auto guest if not logged in
         if not st.session_state.get("user"):
             st.session_state.user = "guest"
             st.session_state.role = "guest"
 
         save_session_to_db()
 
+
+# =============== INITIALIZE SESSION ===============
 check_and_create_session_id()
 
+# Initialize session state with default values
 if "user" not in st.session_state:
     st.session_state.user = None
 if "role" not in st.session_state:
@@ -385,17 +447,25 @@ if "search_query" not in st.session_state:
 if "confirm_delete" not in st.session_state:
     st.session_state.confirm_delete = None
 
+# Load persistent session data
 load_session_from_db()
+
+# Process query parameters FIRST
 process_query_params()
+
+# Get cached metadata
 metadata = get_metadata_cached()
 
+# Logo
 default_logo_path = os.path.join(logo_dir, "branks3_logo.png")
 if not os.path.exists(default_logo_path):
+    # Don't show uploader on login page to avoid rerun issues
     pass
 logo_b64 = file_to_base64(default_logo_path) if os.path.exists(default_logo_path) else ""
 
-# =============== RESPONSIVE LOGIN PAGE ===============
+# =============== RESPONSIVE LOGIN PAGE (NO SCROLLING) ===============
 if st.session_state.page == "Login":
+    # Save session state
     save_session_to_db()
     
     st.markdown("""
@@ -403,6 +473,7 @@ if st.session_state.page == "Login":
     [data-testid="stSidebar"] {display:none;}
     header {visibility:hidden;}
     
+    /* COMPLETELY PREVENT SCROLLING ON LOGIN PAGE */
     html, body, #root, .stApp {
         overflow: hidden !important;
         height: 100vh !important;
@@ -416,6 +487,7 @@ if st.session_state.page == "Login":
         bottom: 0 !important;
     }
     
+    /* FIXED BACKGROUND - NO SCROLLING */
     body {
         background: radial-gradient(circle at top,#335d8c 0,#0b1b30 55%,#020712 100%);
         position: fixed !important;
@@ -426,12 +498,14 @@ if st.session_state.page == "Login":
         overflow: hidden !important;
     }
 
+    /* INNER CONTENT PADDING */
     .login-content {
         padding: 1.8rem 2.2rem 2.2rem 2.2rem;
         max-height: 90vh;
         overflow-y: auto;
     }
 
+    /* CENTERED HEADER SECTION */
     .login-header {
         display: flex;
         flex-direction: column;
@@ -462,6 +536,7 @@ if st.session_state.page == "Login":
         width: 100%;
     }
 
+    /* INPUTS BLEND WITH BOX */
     .stTextInput input {
         background: rgba(5,10,25,0.7) !important;
         border-radius: 10px !important;
@@ -486,6 +561,7 @@ if st.session_state.page == "Login":
         border: none;
     }
     
+    /* RESPONSIVE COLUMNS FOR MOBILE */
     @media (max-width: 768px) {
         .login-content {
             padding: 1.5rem 1rem 1.5rem 1rem;
@@ -500,6 +576,7 @@ if st.session_state.page == "Login":
             font-size: 1.4rem;
         }
         
+        /* MOBILE TEXT SIZE ADJUSTMENTS */
         .stTextInput input {
             font-size: 14px !important;
             padding: 10px 12px !important;
@@ -510,11 +587,13 @@ if st.session_state.page == "Login":
             height: 40px !important;
         }
         
+        /* MOBILE COLUMNS ADJUSTMENT */
         .stColumn {
             padding: 0 5px !important;
         }
     }
     
+    /* EXTRA SMALL MOBILE */
     @media (max-width: 480px) {
         .login-content {
             padding: 1rem 0.8rem 1rem 0.8rem;
@@ -540,6 +619,7 @@ if st.session_state.page == "Login":
         }
     }
     
+    /* UPDATED CONTACT LINKS - NO UNDERLINE, ONE ROW WITH ORIGINAL COLORS */
     .contact-links-row {
         display: flex;
         justify-content: center;
@@ -569,12 +649,14 @@ if st.session_state.page == "Login":
         text-decoration: none !important;
     }
     
+    /* EMAIL - GOOGLE COLORS */
     .contact-link-item.email {
         color: #4285F4 !important;
         background: rgba(66, 133, 244, 0.1);
         border: none;
     }
     
+    /* INSTAGRAM - ORIGINAL GRADIENT */
     .contact-link-item.instagram {
         background: linear-gradient(45deg, #405DE6, #5851DB, #833AB4, #C13584, #E1306C, #FD1D1D) !important;
         -webkit-background-clip: text !important;
@@ -584,6 +666,7 @@ if st.session_state.page == "Login":
         border: none;
     }
     
+    /* YOUTUBE - RED COLOR */
     .contact-link-item.youtube {
         color: #FF0000 !important;
         background: rgba(255, 0, 0, 0.1);
@@ -612,6 +695,7 @@ if st.session_state.page == "Login":
         }
     }
     
+    /* USER/ADMIN DASHBOARD BUTTONS - SAME ROW, SMALLER TEXT FOR MOBILE */
     .dashboard-buttons-row {
         display: flex;
         justify-content: center;
@@ -661,11 +745,14 @@ if st.session_state.page == "Login":
     </style>
     """, unsafe_allow_html=True)
 
+    # -------- CENTER ALIGN COLUMN --------
+    # Mobile ki columns adjust chesanu
     left, center, right = st.columns([0.5, 2, 0.5]) if st.session_state.get('mobile_mode', False) else st.columns([1, 1.5, 1])
 
     with center:
         st.markdown('<div class="login-content">', unsafe_allow_html=True)
 
+        # Header with better spacing
         st.markdown(f"""
         <div class="login-header">
             <img src="data:image/png;base64,{logo_b64}" onerror="this.style.display='none'">
@@ -686,26 +773,27 @@ if st.session_state.page == "Login":
                     st.session_state.user = username
                     st.session_state.role = "admin"
                     st.session_state.page = "Admin Dashboard"
-                    st.session_state.selected_song = None
+                    st.session_state.selected_song = None  # Clear any song selection
                     save_session_to_db()
                     st.rerun()
                 elif username == "branks3" and USER1_HASH and hashed_pass == USER1_HASH:
                     st.session_state.user = username
                     st.session_state.role = "user"
                     st.session_state.page = "User Dashboard"
-                    st.session_state.selected_song = None
+                    st.session_state.selected_song = None  # Clear any song selection
                     save_session_to_db()
                     st.rerun()
                 elif username == "user2" and USER2_HASH and hashed_pass == USER2_HASH:
                     st.session_state.user = username
                     st.session_state.role = "user"
                     st.session_state.page = "User Dashboard"
-                    st.session_state.selected_song = None
+                    st.session_state.selected_song = None  # Clear any song selection
                     save_session_to_db()
                     st.rerun()
                 else:
                     st.error("❌ Invalid credentials")
 
+        # UPDATED CONTACT ADMIN SECTION WITH EMAIL AND INSTAGRAM OPTIONS
         st.markdown("""
         <div style="margin-top:16px;font-size:0.8rem;color:#b5c2d2;text-align:center;padding-bottom:8px;">
             Don't have access? Contact admin:
@@ -733,54 +821,68 @@ if st.session_state.page == "Login":
 
 # =============== ADMIN DASHBOARD ===============
 elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "admin":
+    # Auto-save session
     save_session_to_db()
     
+    # Add mobile-responsive styles for admin dashboard
     st.markdown("""
     <style>
+    /* ADMIN DASHBOARD MOBILE STYLES */
     @media (max-width: 768px) {
+        /* Reduce title size */
         h1 {
             font-size: 1.5rem !important;
         }
         
+        /* Reduce subheader size */
         h3 {
             font-size: 1.2rem !important;
         }
         
+        /* Reduce button text size */
         .stButton > button {
             font-size: 14px !important;
             padding: 8px 12px !important;
         }
         
+        /* Reduce radio button text */
         .stRadio > div[role="radiogroup"] > label {
             font-size: 14px !important;
         }
         
+        /* Reduce sidebar text */
         [data-testid="stSidebar"] * {
             font-size: 14px !important;
         }
         
+        /* Adjust song list items */
         .song-name {
             font-size: 14px !important;
         }
         
+        /* Adjust columns for mobile */
         .stColumn {
             padding: 2px !important;
         }
         
+        /* Search bar mobile optimization */
         .stTextInput > div > div > input {
             font-size: 14px !important;
             padding: 8px !important;
         }
         
+        /* File uploader mobile */
         .stFileUploader > div {
             font-size: 12px !important;
         }
         
+        /* Reduce padding */
         .main .block-container {
             padding: 1rem !important;
         }
     }
     
+    /* EXTRA SMALL MOBILE */
     @media (max-width: 480px) {
         h1 {
             font-size: 1.3rem !important;
@@ -804,10 +906,82 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             font-size: 12px !important;
         }
         
+        /* Three column layout ki mobile lo single column chestam */
         .stColumn {
             width: 100% !important;
             padding: 0 !important;
             margin-bottom: 10px !important;
+        }
+    }
+    
+    /* DELETE BUTTON STYLING - NO BACKGROUND, NO BORDER, NO PADDING */
+    .delete-button {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-width: auto !important;
+        width: auto !important;
+        color: #ff4444 !important;
+        font-size: 20px !important;
+        box-shadow: none !important;
+    }
+    
+    .delete-button:hover {
+        background: transparent !important;
+        color: #ff0000 !important;
+        transform: scale(1.1);
+    }
+    
+    /* SONG LIST ITEMS - CLEAN LAYOUT */
+    .song-item-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 4px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    
+    /* PLAY BUTTON STYLING */
+    .play-button {
+        background: transparent !important;
+        border: none !important;
+        color: #4CAF50 !important;
+        text-align: left !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+    }
+    
+    .play-button:hover {
+        background: rgba(76, 175, 80, 0.1) !important;
+    }
+    
+    /* SHARE BUTTON STYLING */
+    .share-link-button {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-width: auto !important;
+        width: auto !important;
+        color: #667eea !important;
+        font-size: 20px !important;
+    }
+    
+    .share-link-button:hover {
+        color: #764ba2 !important;
+        transform: scale(1.1);
+    }
+    
+    /* MOBILE SONG LIST ITEMS */
+    @media (max-width: 768px) {
+        .song-item-row {
+            flex-direction: column;
+            align-items: flex-start;
+            margin-bottom: 10px !important;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 10px !important;
         }
     }
     </style>
@@ -821,15 +995,18 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         key="admin_nav"
     )
 
+    # ================= UPLOAD SONGS =================
     if page_sidebar == "Upload Songs":
         st.subheader("📤 Upload New Song")
 
+        # ✅ SONG NAME INPUT
         song_name_input = st.text_input(
             "🎶 Song Name",
             placeholder="Enter song name (example: MySong)",
             key="song_name_input"
         )
 
+        # Mobile ki columns adjust chesanu
         if st.session_state.get('mobile_mode', False):
             col1, col2, col3 = st.columns(1), st.columns(1), st.columns(1)
             with st.container():
@@ -901,6 +1078,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 }
                 save_metadata(metadata)
 
+                # Clear cache
                 get_song_files_cached.clear()
                 get_metadata_cached.clear()
 
@@ -909,9 +1087,11 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 time.sleep(1)
                 st.rerun()
 
+    # ================= SONGS LIST =================
     elif page_sidebar == "Songs List":
         st.subheader("🎵 All Songs List (Admin View)")
         
+        # SEARCH BAR WITH PLACEHOLDER
         search_query = st.text_input(
             "🔍 Search songs...",
             value=st.session_state.get("search_query", ""),
@@ -922,6 +1102,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         
         uploaded_songs = get_song_files_cached()
         
+        # Filter songs based on search query
         if search_query:
             uploaded_songs = [song for song in uploaded_songs 
                             if search_query.lower() in song.lower()]
@@ -932,10 +1113,13 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs uploaded yet.")
         else:
+            # Mobile ki layout adjust chesanu
             if st.session_state.get('mobile_mode', False):
                 for idx, s in enumerate(uploaded_songs):
+                    # Mobile lo vertical layout
                     col1 = st.columns(1)[0]
                     with col1:
+                        # Clickable song name
                         if st.button(
                             f"🎶 {s}",
                             key=f"song_name_{s}_{idx}",
@@ -945,8 +1129,10 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                         ):
                             open_song_player(s)
                     
+                    # Mobile lo action buttons row
                     col_actions = st.columns(2)
                     with col_actions[0]:
+                        # Share link
                         safe_s = quote(s)
                         share_url = f"{APP_URL}?song={safe_s}"
                         if st.button(
@@ -958,6 +1144,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                             st.info("Link copied to clipboard!")
                     
                     with col_actions[1]:
+                        # Delete button
                         if st.button(
                             "🗑️ Delete",
                             key=f"delete_{s}_{idx}",
@@ -968,6 +1155,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     
                     st.markdown("---")
             else:
+                # Desktop layout
                 for idx, s in enumerate(uploaded_songs):
                     col1, col2, col3 = st.columns([3, 1, 1])
                     
@@ -1001,6 +1189,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                             st.session_state.confirm_delete = s
                             st.rerun()
             
+            # Confirmation dialog for deletion
             if st.session_state.confirm_delete:
                 song_to_delete = st.session_state.confirm_delete
                 st.warning(f"⚠️ Are you sure you want to delete **{song_to_delete}**?")
@@ -1029,11 +1218,13 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                         st.session_state.confirm_delete = None
                         st.rerun()
 
+    # ================= SHARE LINKS =================
     elif page_sidebar == "Share Links":
         st.header("🔗 Manage Shared Links")
 
         all_songs = get_song_files_cached()
         
+        # SEARCH BAR WITH PLACEHOLDER
         search_query = st.text_input(
             "🔍 Search songs...",
             value=st.session_state.get("search_query", ""),
@@ -1042,6 +1233,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         )
         st.session_state.search_query = search_query
         
+        # Filter songs based on search query
         if search_query:
             all_songs = [song for song in all_songs 
                         if search_query.lower() in song.lower()]
@@ -1054,6 +1246,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs available to share.")
         else:
+            # Mobile ki layout
             if st.session_state.get('mobile_mode', False):
                 for song in all_songs:
                     safe_song = quote(song)
@@ -1062,6 +1255,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     
                     st.write(f"**{song}** - {status}")
                     
+                    # Mobile action buttons
                     col_actions = st.columns(2)
                     
                     with col_actions[0]:
@@ -1102,6 +1296,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     
                     st.markdown("---")
             else:
+                # Desktop layout
                 for song in all_songs:
                     col1, col2 = st.columns([3, 1])
                     
@@ -1153,6 +1348,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                                 " title="Open Link">🔗</a>
                                 """, unsafe_allow_html=True)
 
+    # ================= LOGOUT =================
     if st.sidebar.button("Logout", key="admin_logout"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
@@ -1162,47 +1358,59 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
 
 # =============== USER DASHBOARD ===============
 elif st.session_state.page == "User Dashboard" and st.session_state.role == "user":
+    # Auto-save session
     save_session_to_db()
     
+    # Add mobile-responsive styles for user dashboard
     st.markdown("""
     <style>
+    /* USER DASHBOARD MOBILE STYLES */
     @media (max-width: 768px) {
+        /* Reduce title size */
         h3 {
             font-size: 1.2rem !important;
         }
         
+        /* Reduce sidebar header */
         [data-testid="stSidebar"] h2 {
             font-size: 1.3rem !important;
         }
         
+        /* Reduce sidebar subheader */
         [data-testid="stSidebar"] h3 {
             font-size: 1.1rem !important;
         }
         
+        /* Reduce button text size */
         .stButton > button {
             font-size: 14px !important;
             padding: 8px 12px !important;
         }
         
+        /* Reduce user song name text */
         .user-song-name {
             font-size: 14px !important;
         }
         
+        /* Search bar mobile optimization */
         .stTextInput > div > div > input {
             font-size: 14px !important;
             padding: 8px !important;
         }
         
+        /* Sidebar width mobile lo taggindi */
         [data-testid="stSidebar"] {
             min-width: 200px !important;
             max-width: 250px !important;
         }
         
+        /* Main content padding adjust */
         .main .block-container {
             padding: 1rem !important;
         }
     }
     
+    /* EXTRA SMALL MOBILE */
     @media (max-width: 480px) {
         h3 {
             font-size: 1.1rem !important;
@@ -1227,10 +1435,40 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             font-size: 1.2rem !important;
         }
     }
+    
+    /* CLICKABLE SONG NAMES - MOBILE OPTIMIZED */
+    .clickable-song {
+        cursor: pointer;
+        padding: 12px 8px;
+        transition: all 0.2s ease;
+        border-radius: 0px;
+        background: transparent !important;
+        border: none !important;
+        text-align: left;
+        width: 100%;
+        display: block;
+        margin: 0 !important;
+    }
+    
+    .clickable-song:hover {
+        background: rgba(255, 0, 102, 0.1) !important;
+        transform: translateX(5px);
+    }
+    
+    /* MOBILE SONG LIST */
+    @media (max-width: 768px) {
+        .clickable-song {
+            padding: 10px 6px;
+            margin-bottom: 5px !important;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
 
+    # 🔹 SIDEBAR - UPDATED WITH "User Dashboard" TEXT
     with st.sidebar:
+        # Display "User Dashboard" title
         st.markdown("<h2 style='text-align: center;'>🎵 User Dashboard</h2>", unsafe_allow_html=True)
         st.markdown("---")
         
@@ -1248,8 +1486,10 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             save_session_to_db()
             st.rerun()
 
+    # 🔹 MAIN CONTENT - UPDATED FOR MOBILE RESPONSIVE DESIGN
     st.subheader("🎵 Available Songs (Only Shared Songs)")
     
+    # SEARCH BAR WITH PLACEHOLDER
     search_query = st.text_input(
         "🔍 Search songs...",
         value=st.session_state.get("search_query", ""),
@@ -1261,8 +1501,10 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
     all_songs = get_song_files_cached()
     shared_links = get_shared_links_cached()
     
+    # Filter only shared songs
     uploaded_songs = [song for song in all_songs if song in shared_links]
     
+    # Filter songs based on search query
     if search_query:
         uploaded_songs = [song for song in uploaded_songs 
                          if search_query.lower() in song.lower()]
@@ -1274,8 +1516,10 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             st.warning("❌ No shared songs available. Contact admin to share songs.")
             st.info("👑 Only admin-shared songs appear here for users.")
     else:
+        # Mobile ki layout optimize chesanu
         if st.session_state.get('mobile_mode', False):
             for idx, song in enumerate(uploaded_songs):
+                # Mobile lo full width button
                 if st.button(
                     f"🎵 {song}",
                     key=f"user_song_{song}_{idx}",
@@ -1285,6 +1529,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
                 ):
                     open_song_player(song)
         else:
+            # Desktop layout
             for idx, song in enumerate(uploaded_songs):
                 if st.button(
                     f"✅ *{song}*",
@@ -1295,8 +1540,9 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
                 ):
                     open_song_player(song)
 
-# =============== SONG PLAYER WITH AUDIO FIXES ===============
+# =============== SONG PLAYER ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
+    # Auto-save session
     save_session_to_db()
     
     st.markdown("""
@@ -1327,6 +1573,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         height: 100vh !important;
     }
     
+    /* MOBILE RESPONSIVE FOR SONG PLAYER BACK BUTTON */
     @media (max-width: 768px) {
         .stButton > button[kind="secondary"] {
             font-size: 14px !important;
@@ -1334,6 +1581,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
             margin: 5px !important;
         }
         
+        /* Mobile lo back button position */
         .stColumn:last-child {
             position: absolute !important;
             top: 10px !important;
@@ -1342,6 +1590,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         }
     }
     
+    /* EXTRA SMALL MOBILE */
     @media (max-width: 480px) {
         .stButton > button[kind="secondary"] {
             font-size: 12px !important;
@@ -1365,6 +1614,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                 st.rerun()
         st.stop()
 
+    # Double-check access permission
     shared_links = get_shared_links_cached()
     is_shared = selected_song in shared_links
     is_admin = st.session_state.role == "admin"
@@ -1388,7 +1638,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH VOICE CLARITY FIXES
+    # ✅ UPDATED KARAOKE TEMPLATE - MOBILE OPTIMIZED
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1446,6 +1696,16 @@ body {
     height: 85vh !important; 
     object-fit: contain !important;
     object-position: top !important;
+}
+.lyrics { 
+    position: absolute; 
+    bottom: 25%; 
+    width: 100%; 
+    text-align: center; 
+    font-size: 2vw; 
+    font-weight: bold; 
+    color: white; 
+    text-shadow: 2px 2px 10px black; 
 }
 .controls { 
     position: absolute; 
@@ -1593,18 +1853,18 @@ canvas {
     <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%" preload="auto"></audio>
     <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%" preload="auto"></audio>
     <div class="controls">
-      <button id="playBtn">▶ Play Original</button>
-      <button id="recordBtn">🎙 Record Karaoke</button>
-      <button id="stopBtn" style="display:none;">⏹ Stop Recording</button>
+      <button id="playBtn">▶ Play</button>
+      <button id="recordBtn">🎙 Record</button>
+      <button id="stopBtn" style="display:none;">⏹ Stop</button>
     </div>
 </div>
 
 <div class="final-output" id="finalOutputDiv">
   <div class="final-reel-container">
     <img class="reel-bg" id="finalBg">
-    <div id="finalStatus">🎉 Recording Complete!</div>
+    <div id="finalStatus">Recording Complete!</div>
     <div class="controls">
-      <button id="playRecordingBtn">▶ Play Recording</button>
+      <button id="playRecordingBtn">▶ Play</button>
       <a id="downloadRecordingBtn" href="#" download>
         <button>⬇ Download</button>
       </a>
@@ -1626,10 +1886,11 @@ let mediaRecorder;
 let recordedChunks = [];
 let playRecordingAudio = null;
 let lastRecordingURL = null;
-let audioContext, micSource, accSource, micGain, accGain, compressor, micFilter, masterGain;
+let audioContext, micSource, accSource, micGain, accGain;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
+let referenceAudio = null;
 let autoStopTimer = null;
 
 /* ================== ELEMENTS ================== */
@@ -1654,16 +1915,20 @@ logoImg.src = document.getElementById("logoImg").src;
 /* ================== CANVAS SETUP FOR MOBILE ================== */
 if (isMobile) {
     if (window.innerWidth < 480) {
+        // Very small mobile
         canvas.width = 360;
         canvas.height = 640;
     } else if (window.innerWidth < 768) {
+        // Normal mobile
         canvas.width = 540;
         canvas.height = 960;
     } else {
+        // Tablet
         canvas.width = 720;
         canvas.height = 1280;
     }
 } else {
+    // Desktop
     canvas.width = 1080;
     canvas.height = 1920;
 }
@@ -1671,15 +1936,11 @@ if (isMobile) {
 /* ================== AUDIO CONTEXT FIX ================== */
 async function ensureAudioContext() {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 48000, // Higher sample rate for better quality
-            latencyHint: 'interactive'
-        });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (audioContext.state === "suspended") {
         await audioContext.resume();
     }
-    return audioContext;
 }
 
 /* ================== TOUCH FRIENDLY EVENT HANDLERS ================== */
@@ -1710,11 +1971,12 @@ playBtn.onclick = function() {
     if (originalAudio.paused) {
         originalAudio.currentTime = 0;
         originalAudio.play().then(() => {
-            playBtn.innerText = "⏹ Stop Original";
-            status.innerText = "🎵 Playing original song...";
+            playBtn.innerText = "⏹ Stop";
+            status.innerText = "🎵 Playing song...";
         }).catch(e => {
             console.log("Play error:", e);
             status.innerText = "❌ Tap to play";
+            // iOS ki special handling
             if (isIOS) {
                 status.innerText = "📱 Tap screen then play";
             }
@@ -1722,7 +1984,7 @@ playBtn.onclick = function() {
     } else {
         originalAudio.pause();
         originalAudio.currentTime = 0;
-        playBtn.innerText = "▶ Play Original";
+        playBtn.innerText = "▶ Play";
         status.innerText = "⏹ Stopped";
     }
 };
@@ -1753,6 +2015,7 @@ function drawCanvas() {
     ctx.drawImage(mainBg, x, y, drawW, drawH);
     ctx.globalAlpha = 1;
     
+    // Mobile ki logo size adjust
     const logoSize = isMobile ? 40 : 100;
     ctx.drawImage(logoImg, 20, 20, logoSize, logoSize);
     ctx.globalAlpha = 1;
@@ -1760,7 +2023,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== RECORD - OPTIMIZED FOR VOICE CLARITY ================== */
+/* ================== RECORD - MOBILE OPTIMIZED ================== */
 recordBtn.onclick = async function() {
     if (isRecording) return;
     
@@ -1769,16 +2032,15 @@ recordBtn.onclick = async function() {
     playBtn.style.display = "none";
     recordBtn.style.display = "none";
     stopBtn.style.display = "inline-block";
-    status.innerText = "🎙 Starting recording...";
+    status.innerText = "🎙 Starting...";
     
     try {
-        // Ensure audio context is ready
-        const audioCtx = await ensureAudioContext();
+        await ensureAudioContext();
         
         // Stop any current playback
         originalAudio.pause();
-        originalAudio.currentTime = 0;
         accompanimentAudio.pause();
+        originalAudio.currentTime = 0;
         accompanimentAudio.currentTime = 0;
         
         // Clear previous timer
@@ -1787,80 +2049,56 @@ recordBtn.onclick = async function() {
             autoStopTimer = null;
         }
         
-        // Get microphone with optimized settings for voice clarity
+        // Create reference audio
+        referenceAudio = new Audio(originalAudio.src);
+        referenceAudio.volume = 0.8;
+        
+        // Get microphone with mobile-optimized settings
         const micStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
                 echoCancellation: true,
                 noiseSuppression: true,
-                autoGainControl: false,  // Disable auto gain for better control
+                autoGainControl: true,
                 channelCount: 1,
-                sampleRate: 48000,
-                latency: 0.01
+                sampleRate: isMobile ? 22050 : 44100  // Mobile ki lower sample rate
             },
             video: false
         }).catch(err => {
-            status.innerText = "❌ Microphone access needed";
+            status.innerText = "❌ Mic access needed";
             resetUIOnError();
             throw err;
         });
         
         // Create audio sources
-        micSource = audioCtx.createMediaStreamSource(micStream);
+        micSource = audioContext.createMediaStreamSource(micStream);
         
         // Load accompaniment
         const accRes = await fetch(accompanimentAudio.src);
         const accBuf = await accRes.arrayBuffer();
-        const accDecoded = await audioCtx.decodeAudioData(accBuf);
+        const accDecoded = await audioContext.decodeAudioData(accBuf);
         
-        accSource = audioCtx.createBufferSource();
+        accSource = audioContext.createBufferSource();
         accSource.buffer = accDecoded;
         const songDuration = accDecoded.duration;
         
-        // =============== AUDIO PROCESSING NODES FOR VOICE CLARITY ===============
+        // Mobile ki gain values adjust
+        micGain = audioContext.createGain();
+        micGain.gain.value = isMobile ? 2.5 : 2.0;  // Mobile ki mic gain ekkuva
         
-        // Create compressor to prevent clipping and improve voice quality
-        compressor = audioCtx.createDynamicsCompressor();
-        compressor.threshold.value = -24;
-        compressor.knee.value = 30;
-        compressor.ratio.value = 12;
-        compressor.attack.value = 0.003;
-        compressor.release.value = 0.250;
-        
-        // Create high-pass filter to remove low-frequency noise (rumble)
-        micFilter = audioCtx.createBiquadFilter();
-        micFilter.type = "highpass";
-        micFilter.frequency.value = 80; // Remove frequencies below 80Hz
-        
-        // Create gain nodes with optimized settings
-        micGain = audioCtx.createGain();
-        micGain.gain.value = isMobile ? 3.0 : 2.5; // Higher gain for mobile
-        
-        accGain = audioCtx.createGain();
-        accGain.gain.value = isMobile ? 0.12 : 0.18; // Lower accompaniment for mobile
-        
-        // Master gain to control overall volume
-        masterGain = audioCtx.createGain();
-        masterGain.gain.value = 1.0;
+        accGain = audioContext.createGain();
+        accGain.gain.value = isMobile ? 0.15 : 0.25;  // Mobile ki accompaniment taggu
         
         // Create destination
-        const destination = audioCtx.createMediaStreamDestination();
+        const destination = audioContext.createMediaStreamDestination();
         
-        // =============== CONNECT AUDIO NODES ===============
-        // Connect microphone: micSource -> filter -> compressor -> gain -> destination
-        micSource.connect(micFilter);
-        micFilter.connect(compressor);
-        compressor.connect(micGain);
-        micGain.connect(masterGain);
-        
-        // Connect accompaniment: accSource -> gain -> destination
+        // Connect audio
+        micSource.connect(micGain);
+        micGain.connect(destination);
         accSource.connect(accGain);
-        accGain.connect(masterGain);
+        accGain.connect(destination);
         
-        // Connect master to destination
-        masterGain.connect(destination);
-        
-        // IMPORTANT: Original song (reference) is NOT connected to destination
-        // So it won't be recorded, only played for reference
+        // Start reference audio
+        referenceAudio.play().catch(e => console.log("Reference audio:", e));
         
         // Start accompaniment
         setTimeout(() => {
@@ -1871,13 +2109,13 @@ recordBtn.onclick = async function() {
                 resetUIOnError();
                 return;
             }
-        }, 100);
+        }, 50);
         
         // Start canvas drawing
         drawCanvas();
         
         // Create stream
-        const canvasStream = canvas.captureStream(isMobile ? 20 : 30);
+        const canvasStream = canvas.captureStream(isMobile ? 15 : 30);  // Mobile ki frame rate taggu
         const mixedAudioStream = destination.stream;
         
         const combinedStream = new MediaStream([
@@ -1885,21 +2123,20 @@ recordBtn.onclick = async function() {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // MediaRecorder settings optimized for voice
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
-            ? 'video/webm;codecs=vp9,opus'
-            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') 
+        // Mobile-friendly MediaRecorder settings
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') 
             ? 'video/webm;codecs=vp8,opus'
+            : MediaRecorder.isTypeSupported('video/mp4') 
+            ? 'video/mp4'
             : 'video/webm';
         
-        // Higher audio bitrate for better voice quality
-        const videoBitrate = isMobile ? 800000 : 2000000;
-        const audioBitrate = isMobile ? 128000 : 192000; // Higher for better voice
+        // Mobile ki bitrate taggu
+        const videoBitrate = isMobile ? 500000 : 1500000;
+        const audioBitrate = isMobile ? 64000 : 128000;
         
         mediaRecorder = new MediaRecorder(combinedStream, {
             mimeType: mimeType,
             videoBitsPerSecond: videoBitrate,
-            audioBitsPerSecond: audioBitrate,
             audioBitsPerSecond: audioBitrate
         });
         
@@ -1913,24 +2150,12 @@ recordBtn.onclick = async function() {
         mediaRecorder.onstop = () => {
             cancelAnimationFrame(canvasRafId);
             
-            // Stop audio sources
-            if (accSource) {
-                try { accSource.stop(); } catch(e) {}
+            // Stop reference audio
+            if (referenceAudio) {
+                referenceAudio.pause();
+                referenceAudio.currentTime = 0;
+                referenceAudio = null;
             }
-            
-            // Stop main audio
-            originalAudio.pause();
-            accompanimentAudio.pause();
-            originalAudio.currentTime = 0;
-            accompanimentAudio.currentTime = 0;
-            
-            // Disconnect all audio nodes
-            if (micSource) micSource.disconnect();
-            if (micFilter) micFilter.disconnect();
-            if (compressor) compressor.disconnect();
-            if (micGain) micGain.disconnect();
-            if (accGain) accGain.disconnect();
-            if (masterGain) masterGain.disconnect();
             
             // Create blob
             if (recordedChunks.length > 0) {
@@ -1945,7 +2170,7 @@ recordBtn.onclick = async function() {
                 
                 // Set download link
                 const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                const fileName = songName + "_karaoke_recording" + (mimeType.includes('mp4') ? '.mp4' : '.webm');
+                const fileName = songName + "_recording" + (mimeType.includes('mp4') ? '.mp4' : '.webm');
                 downloadRecordingBtn.href = url;
                 downloadRecordingBtn.download = fileName;
                 
@@ -1957,13 +2182,12 @@ recordBtn.onclick = async function() {
                             playRecordingAudio = null;
                         }
                         playRecordingAudio = new Audio(url);
-                        playRecordingAudio.volume = 1.0;
                         playRecordingAudio.play();
                         playRecordingBtn.innerText = "⏹ Stop";
                         isPlayingRecording = true;
                         
                         playRecordingAudio.onended = () => {
-                            playRecordingBtn.innerText = "▶ Play Recording";
+                            playRecordingBtn.innerText = "▶ Play";
                             isPlayingRecording = false;
                         };
                     } else {
@@ -1971,7 +2195,7 @@ recordBtn.onclick = async function() {
                             playRecordingAudio.pause();
                             playRecordingAudio.currentTime = 0;
                         }
-                        playRecordingBtn.innerText = "▶ Play Recording";
+                        playRecordingBtn.innerText = "▶ Play";
                         isPlayingRecording = false;
                     }
                 };
@@ -1979,23 +2203,24 @@ recordBtn.onclick = async function() {
         };
         
         // Start recording
-        mediaRecorder.start(100); // 100ms chunks for smoother recording
-        status.innerText = "🎙 Recording... Sing along with the accompaniment!";
+        mediaRecorder.start();
+        status.innerText = "🎙 Recording... Sing!";
         
         // Auto-stop timer
         autoStopTimer = setTimeout(() => {
             if (isRecording) {
                 stopRecording();
             }
-        }, (songDuration * 1000) + 1000);
+        }, (songDuration * 1000) + 500);
         
     } catch (error) {
         console.error("Recording error:", error);
-        status.innerText = "❌ Recording failed: " + (error.message || "Check microphone permissions");
+        status.innerText = "❌ Failed: " + (error.message || "Check mic access");
         resetUIOnError();
         
+        // Mobile ki specific error messages
         if (isIOS && error.name === 'NotAllowedError') {
-            status.innerText = "📱 Allow microphone access in Settings > Safari";
+            status.innerText = "📱 Allow mic in Settings";
         }
     }
 };
@@ -2020,6 +2245,13 @@ function stopRecording() {
         try { accSource.stop(); } catch(e) {}
     }
     
+    // Stop reference audio
+    if (referenceAudio) {
+        referenceAudio.pause();
+        referenceAudio.currentTime = 0;
+        referenceAudio = null;
+    }
+    
     // Stop main audio
     originalAudio.pause();
     accompanimentAudio.pause();
@@ -2035,7 +2267,7 @@ function stopRecording() {
     // Update UI
     isRecording = false;
     stopBtn.style.display = "none";
-    status.innerText = "✅ Recording complete! Processing...";
+    status.innerText = "✅ Recording complete!";
 }
 
 /* ================== STOP BUTTON CLICK ================== */
@@ -2059,11 +2291,18 @@ newRecordingBtn.onclick = function() {
     originalAudio.currentTime = 0;
     accompanimentAudio.currentTime = 0;
     
+    // Clean reference
+    if (referenceAudio) {
+        referenceAudio.pause();
+        referenceAudio.currentTime = 0;
+        referenceAudio = null;
+    }
+    
     // Reset UI
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
-    playBtn.innerText = "▶ Play Original";
+    playBtn.innerText = "▶ Play";
     status.innerText = "Ready 🎤";
     
     // Reset state
@@ -2085,25 +2324,32 @@ function resetUIOnError() {
     recordBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
     
+    if (referenceAudio) {
+        referenceAudio.pause();
+        referenceAudio.currentTime = 0;
+        referenceAudio = null;
+    }
+    
     if (autoStopTimer) {
         clearTimeout(autoStopTimer);
         autoStopTimer = null;
     }
 }
 
-/* ================== AUDIO CONTEXT UNLOCK FOR IOS ================== */
-function unlockAudioContext() {
-    if (isIOS && audioContext && audioContext.state === 'suspended') {
-        const unlock = () => {
-            audioContext.resume().then(() => {
-                document.body.removeEventListener('touchstart', unlock);
-                document.body.removeEventListener('touchend', unlock);
-            });
-        };
-        document.body.addEventListener('touchstart', unlock, false);
-        document.body.addEventListener('touchend', unlock, false);
+/* ================== MOBILE TOUCH EVENTS ================== */
+document.addEventListener('touchstart', async () => {
+    // iOS ki audio context unlock cheyadaaniki
+    if (isIOS) {
+        await ensureAudioContext();
+        // Silent audio play chesi unlock chestam
+        const silentAudio = new Audio();
+        silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ';
+        silentAudio.play().then(() => {
+            silentAudio.pause();
+            silentAudio.currentTime = 0;
+        });
     }
-}
+}, { once: true });
 
 /* ================== VISIBILITY CHANGE HANDLER ================== */
 document.addEventListener('visibilitychange', async () => {
@@ -2112,25 +2358,35 @@ document.addEventListener('visibilitychange', async () => {
     }
 });
 
+/* ================== AUDIO END HANDLER ================== */
+originalAudio.addEventListener('ended', () => {
+    if (playBtn.innerText === "⏹ Stop") {
+        playBtn.innerText = "▶ Play";
+        status.innerText = "✅ Song completed";
+        
+        setTimeout(() => {
+            if (status.innerText === "✅ Song completed") {
+                status.innerText = "Ready 🎤";
+            }
+        }, 1500);
+    }
+});
+
 /* ================== WINDOW LOAD ================== */
 window.addEventListener('load', () => {
-    console.log("Karaoke Player Loaded - Voice Clarity Optimized");
+    console.log("Karaoke Player Loaded - Mobile Optimized");
     status.innerText = "Ready 🎤";
     
     // Mobile detection
     if (isMobile) {
         console.log("Mobile device detected");
-        status.innerText = "📱 Ready - Use headphones for best quality";
-        
-        // Unlock audio context for iOS
-        if (isIOS) {
-            unlockAudioContext();
-        }
+        status.innerText = "📱 Ready - Tap buttons";
     }
 });
 
 /* ================== WINDOW RESIZE HANDLER ================== */
 window.addEventListener('resize', () => {
+    // Adjust canvas size on orientation change
     if (isMobile) {
         if (window.innerWidth < 480) {
             canvas.width = 360;
@@ -2155,9 +2411,11 @@ window.addEventListener('resize', () => {
     karaoke_html = karaoke_html.replace("%%ACCOMP_B64%%", accompaniment_b64 or "")
     karaoke_html = karaoke_html.replace("%%SONG_NAME%%", selected_song)
 
-    # ✅ BACK BUTTON LOGIC
+    # ✅ BACK BUTTON LOGIC - MOBILE OPTIMIZED
     if st.session_state.role in ["admin", "user"]:
+        # Mobile lo back button position adjust
         if st.session_state.get('mobile_mode', False):
+            # Mobile lo top-right lo
             st.markdown("""
             <div style="position: absolute; top: 10px; right: 10px; z-index: 1000;">
             """, unsafe_allow_html=True)
@@ -2178,6 +2436,7 @@ window.addEventListener('resize', () => {
             
             st.markdown("</div>", unsafe_allow_html=True)
         else:
+            # Desktop layout
             col1, col2 = st.columns([5, 1])
             with col2:
                 if st.button("← Back to Dashboard", key="back_player", type="secondary"):
@@ -2196,6 +2455,7 @@ window.addEventListener('resize', () => {
     else:
         st.empty()
 
+    # Mobile ki height adjust chesanu
     mobile_height = 700 if st.session_state.get('mobile_mode', False) else 800
     
     html(karaoke_html, height=mobile_height, width=1920, scrolling=False)
