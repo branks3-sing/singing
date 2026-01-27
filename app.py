@@ -1638,7 +1638,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
 
-    # ✅ IMPROVED KARAOKE TEMPLATE WITH BETTER AUDIO PROCESSING
+    # ✅ UPDATED KARAOKE TEMPLATE - FIXED VOICE CLARITY AND PREVENTING ORIGINAL SONG RECORDING
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1854,8 +1854,8 @@ canvas {
     <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%" preload="auto"></audio>
     <div class="controls">
       <button id="playBtn">▶ Play Reference</button>
-      <button id="recordBtn">🎙 Record</button>
-      <button id="stopBtn" style="display:none;">⏹ Stop</button>
+      <button id="recordBtn">🎙 Start Recording</button>
+      <button id="stopBtn" style="display:none;">⏹ Stop Recording</button>
     </div>
 </div>
 
@@ -1864,7 +1864,7 @@ canvas {
     <img class="reel-bg" id="finalBg">
     <div id="finalStatus">Recording Complete!</div>
     <div class="controls">
-      <button id="playRecordingBtn">▶ Play</button>
+      <button id="playRecordingBtn">▶ Play Recording</button>
       <a id="downloadRecordingBtn" href="#" download>
         <button>⬇ Download</button>
       </a>
@@ -1886,12 +1886,14 @@ let mediaRecorder;
 let recordedChunks = [];
 let playRecordingAudio = null;
 let lastRecordingURL = null;
-let audioContext, micSource, accSource, micGain, accGain;
+let audioContext, micSource, accSource, micGain, accGain, mergerNode, destinationNode;
 let canvasRafId = null;
 let isRecording = false;
 let isPlayingRecording = false;
 let referenceAudio = null;
 let autoStopTimer = null;
+let audioBufferSource = null;
+let isReferencePlaying = false;
 
 /* ================== ELEMENTS ================== */
 const playBtn = document.getElementById("playBtn");
@@ -1937,13 +1939,14 @@ if (isMobile) {
 async function ensureAudioContext() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)({
-            latencyHint: 'interactive',
-            sampleRate: 48000
+            sampleRate: 44100,
+            latencyHint: 'interactive'
         });
     }
     if (audioContext.state === "suspended") {
         await audioContext.resume();
     }
+    return audioContext;
 }
 
 /* ================== TOUCH FRIENDLY EVENT HANDLERS ================== */
@@ -1969,27 +1972,33 @@ recordBtn.addEventListener('touchend', function(e) {
     this.click();
 });
 
-/* ================== PLAY ORIGINAL ================== */
+/* ================== PLAY REFERENCE AUDIO (ORIGINAL SONG) ================== */
 playBtn.onclick = function() {
-    if (originalAudio.paused) {
+    if (isReferencePlaying) {
+        // Stop reference audio
+        originalAudio.pause();
         originalAudio.currentTime = 0;
-        originalAudio.volume = 0.8;
+        if (audioBufferSource) {
+            try { audioBufferSource.stop(); } catch(e) {}
+            audioBufferSource = null;
+        }
+        playBtn.innerText = "▶ Play Reference";
+        status.innerText = "⏹ Reference stopped";
+        isReferencePlaying = false;
+    } else {
+        // Start playing reference audio
+        originalAudio.currentTime = 0;
         originalAudio.play().then(() => {
-            playBtn.innerText = "⏹ Stop";
-            status.innerText = "🎵 Playing reference song...";
+            playBtn.innerText = "⏹ Stop Reference";
+            status.innerText = "🎵 Playing reference...";
+            isReferencePlaying = true;
         }).catch(e => {
             console.log("Play error:", e);
             status.innerText = "❌ Tap to play";
-            // iOS ki special handling
             if (isIOS) {
                 status.innerText = "📱 Tap screen then play";
             }
         });
-    } else {
-        originalAudio.pause();
-        originalAudio.currentTime = 0;
-        playBtn.innerText = "▶ Play Reference";
-        status.innerText = "⏹ Stopped";
     }
 };
 
@@ -2027,7 +2036,7 @@ function drawCanvas() {
     canvasRafId = requestAnimationFrame(drawCanvas);
 }
 
-/* ================== IMPROVED RECORDING FUNCTION ================== */
+/* ================== RECORD - FIXED VOICE CLARITY AND NO ORIGINAL SONG IN RECORDING ================== */
 recordBtn.onclick = async function() {
     if (isRecording) return;
     
@@ -2039,13 +2048,15 @@ recordBtn.onclick = async function() {
     status.innerText = "🎙 Starting recording...";
     
     try {
-        await ensureAudioContext();
+        const audioCtx = await ensureAudioContext();
         
         // Stop any current playback
-        originalAudio.pause();
-        accompanimentAudio.pause();
-        originalAudio.currentTime = 0;
-        accompanimentAudio.currentTime = 0;
+        if (isReferencePlaying) {
+            originalAudio.pause();
+            originalAudio.currentTime = 0;
+            playBtn.innerText = "▶ Play Reference";
+            isReferencePlaying = false;
+        }
         
         // Clear previous timer
         if (autoStopTimer) {
@@ -2053,20 +2064,16 @@ recordBtn.onclick = async function() {
             autoStopTimer = null;
         }
         
-        // Create reference audio for playback ONLY (not for recording)
-        referenceAudio = new Audio(originalAudio.src);
-        referenceAudio.volume = 0.8;
-        
-        // Get microphone with optimized settings for clarity
+        // Get microphone with OPTIMIZED settings for voice clarity
         const micStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: false,  // Turn off auto gain for better control
-                channelCount: 1,
-                sampleRate: 48000,
-                volume: 1.0,
-                latency: 0
+                echoCancellation: true,           // Helps reduce echo
+                noiseSuppression: true,          // Reduces background noise
+                autoGainControl: false,          // DISABLED - prevents voice breaks
+                channelCount: 1,                 // Mono for better compatibility
+                sampleRate: 44100,               // High quality audio
+                sampleSize: 16,                  // 16-bit for clarity
+                volume: 1.0                      // Full volume
             },
             video: false
         }).catch(err => {
@@ -2075,72 +2082,49 @@ recordBtn.onclick = async function() {
             throw err;
         });
         
-        // Create audio nodes
-        micSource = audioContext.createMediaStreamSource(micStream);
+        // Create audio sources
+        micSource = audioCtx.createMediaStreamSource(micStream);
         
-        // Load accompaniment
+        // Load accompaniment (this will be recorded with voice)
         const accRes = await fetch(accompanimentAudio.src);
         const accBuf = await accRes.arrayBuffer();
-        const accDecoded = await audioContext.decodeAudioData(accBuf);
+        const accDecoded = await audioCtx.decodeAudioData(accBuf);
         
-        accSource = audioContext.createBufferSource();
+        accSource = audioCtx.createBufferSource();
         accSource.buffer = accDecoded;
         const songDuration = accDecoded.duration;
         
-        // Create gains with better settings for voice clarity
-        micGain = audioContext.createGain();
-        micGain.gain.value = 3.0;  // Increased for better voice clarity
+        // Create gain nodes with OPTIMIZED settings
+        micGain = audioCtx.createGain();
+        micGain.gain.value = 2.5;  // Increased for better voice clarity
         
-        accGain = audioContext.createGain();
-        accGain.gain.value = 0.7;  // Balanced accompaniment level
+        accGain = audioCtx.createGain();
+        accGain.gain.value = 0.25;  // Balanced accompaniment volume
         
-        // Create compressor for better voice quality
-        const compressor = audioContext.createDynamicsCompressor();
-        compressor.threshold.value = -50;
-        compressor.knee.value = 40;
-        compressor.ratio.value = 12;
-        compressor.attack.value = 0;
-        compressor.release.value = 0.25;
-        
-        // Create biquad filter for voice enhancement
-        const voiceFilter = audioContext.createBiquadFilter();
-        voiceFilter.type = "bandpass";
-        voiceFilter.frequency.value = 1000;
-        voiceFilter.Q.value = 1;
+        // Create merger to mix microphone and accompaniment
+        mergerNode = audioCtx.createChannelMerger(2);
         
         // Create destination for recording
-        const destination = audioContext.createMediaStreamDestination();
+        destinationNode = audioCtx.createMediaStreamDestination();
         
-        // Connect audio chain for recording (voice + accompaniment ONLY)
+        // Connect audio nodes properly
+        // Microphone -> Gain -> Merger (channel 0)
         micSource.connect(micGain);
-        micGain.connect(voiceFilter);
-        voiceFilter.connect(compressor);
-        compressor.connect(destination);
+        micGain.connect(mergerNode, 0, 0);
         
-        // Connect accompaniment for recording
+        // Accompaniment -> Gain -> Merger (channel 1)
         accSource.connect(accGain);
-        accGain.connect(destination);
+        accGain.connect(mergerNode, 0, 1);
         
-        // Start reference audio for listening (NOT in recording)
-        referenceAudio.play().catch(e => console.log("Reference audio:", e));
-        
-        // Start accompaniment for recording
-        setTimeout(() => {
-            try {
-                accSource.start();
-            } catch(e) {
-                console.log("Accompaniment error:", e);
-                resetUIOnError();
-                return;
-            }
-        }, 100);
+        // Merger -> Destination (for recording)
+        mergerNode.connect(destinationNode);
         
         // Start canvas drawing
         drawCanvas();
         
-        // Create stream for recording
-        const canvasStream = canvas.captureStream(isMobile ? 30 : 60);
-        const mixedAudioStream = destination.stream;
+        // Create stream from canvas and mixed audio
+        const canvasStream = canvas.captureStream(isMobile ? 25 : 30);
+        const mixedAudioStream = destinationNode.stream;
         
         // Combine video and audio streams
         const combinedStream = new MediaStream([
@@ -2148,22 +2132,17 @@ recordBtn.onclick = async function() {
             ...mixedAudioStream.getAudioTracks()
         ]);
         
-        // MediaRecorder settings for high quality
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
-            ? 'video/webm;codecs=vp9,opus'
-            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') 
-            ? 'video/webm;codecs=vp8,opus'
-            : 'video/webm';
+        // Get supported MIME type
+        let mimeType = 'video/webm;codecs=vp8,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm';
+        }
         
-        // High quality settings for clear audio
-        const videoBitrate = isMobile ? 2500000 : 5000000;
-        const audioBitrate = 192000;  // High quality audio
-        
+        // Create MediaRecorder with optimized settings
         mediaRecorder = new MediaRecorder(combinedStream, {
             mimeType: mimeType,
-            videoBitsPerSecond: videoBitrate,
-            audioBitsPerSecond: audioBitrate,
-            audioBitsPerSecond: audioBitrate
+            audioBitsPerSecond: 128000,    // High quality audio
+            videoBitsPerSecond: 2500000    // Good video quality
         });
         
         recordedChunks = [];
@@ -2176,14 +2155,23 @@ recordBtn.onclick = async function() {
         mediaRecorder.onstop = () => {
             cancelAnimationFrame(canvasRafId);
             
-            // Stop reference audio
-            if (referenceAudio) {
-                referenceAudio.pause();
-                referenceAudio.currentTime = 0;
-                referenceAudio = null;
+            // Stop all audio sources
+            if (accSource) {
+                try { 
+                    accSource.stop(); 
+                    accSource.disconnect();
+                } catch(e) {}
+                accSource = null;
             }
             
-            // Create final recording
+            if (micSource) {
+                try { 
+                    micSource.disconnect(); 
+                } catch(e) {}
+                micSource = null;
+            }
+            
+            // Create blob and URL
             if (recordedChunks.length > 0) {
                 const blob = new Blob(recordedChunks, { type: mimeType });
                 const url = URL.createObjectURL(blob);
@@ -2197,7 +2185,7 @@ recordBtn.onclick = async function() {
                 
                 // Set download link
                 const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                const fileName = songName + "_karaoke_recording" + (mimeType.includes('mp4') ? '.mp4' : '.webm');
+                const fileName = songName + "_recording" + (mimeType.includes('mp4') ? '.mp4' : '.webm');
                 downloadRecordingBtn.href = url;
                 downloadRecordingBtn.download = fileName;
                 
@@ -2215,7 +2203,7 @@ recordBtn.onclick = async function() {
                         isPlayingRecording = true;
                         
                         playRecordingAudio.onended = () => {
-                            playRecordingBtn.innerText = "▶ Play";
+                            playRecordingBtn.innerText = "▶ Play Recording";
                             isPlayingRecording = false;
                         };
                     } else {
@@ -2223,7 +2211,7 @@ recordBtn.onclick = async function() {
                             playRecordingAudio.pause();
                             playRecordingAudio.currentTime = 0;
                         }
-                        playRecordingBtn.innerText = "▶ Play";
+                        playRecordingBtn.innerText = "▶ Play Recording";
                         isPlayingRecording = false;
                     }
                 };
@@ -2231,26 +2219,33 @@ recordBtn.onclick = async function() {
         };
         
         // Start recording
-        mediaRecorder.start(100);  // Collect data every 100ms for smoother recording
-        status.innerText = "🎙 Recording... Sing clearly! (Use headphones for best results)";
+        mediaRecorder.start(100); // Collect data every 100ms for smoother recording
         
-        // Auto-stop timer based on song duration
+        // Start accompaniment immediately
+        try {
+            accSource.start();
+        } catch(e) {
+            console.log("Accompaniment error:", e);
+        }
+        
+        status.innerText = "🎙 Recording... Sing along!";
+        
+        // Auto-stop timer
         autoStopTimer = setTimeout(() => {
             if (isRecording) {
                 stopRecording();
+                status.innerText = "✅ Auto-stopped: Recording complete!";
             }
         }, (songDuration * 1000) + 1000);
         
     } catch (error) {
         console.error("Recording error:", error);
-        status.innerText = "❌ Error: " + (error.message || "Check microphone permissions");
+        status.innerText = "❌ Failed: " + (error.message || "Check microphone access");
         resetUIOnError();
         
-        // Platform-specific error messages
+        // Mobile ki specific error messages
         if (isIOS && error.name === 'NotAllowedError') {
-            status.innerText = "📱 Allow microphone in Settings > Safari";
-        } else if (isAndroid && error.name === 'NotAllowedError') {
-            status.innerText = "📱 Allow microphone permission in browser";
+            status.innerText = "📱 Allow microphone in Settings";
         }
     }
 };
@@ -2272,21 +2267,21 @@ function stopRecording() {
     
     // Stop audio sources
     if (accSource) {
-        try { accSource.stop(); } catch(e) {}
+        try { 
+            accSource.stop(); 
+            accSource.disconnect();
+        } catch(e) {}
     }
     
-    // Stop reference audio
-    if (referenceAudio) {
-        referenceAudio.pause();
-        referenceAudio.currentTime = 0;
-        referenceAudio = null;
+    if (micSource) {
+        try { 
+            micSource.disconnect(); 
+        } catch(e) {}
     }
     
     // Stop main audio
     originalAudio.pause();
-    accompanimentAudio.pause();
     originalAudio.currentTime = 0;
-    accompanimentAudio.currentTime = 0;
     
     // Stop canvas
     if (canvasRafId) {
@@ -2297,7 +2292,7 @@ function stopRecording() {
     // Update UI
     isRecording = false;
     stopBtn.style.display = "none";
-    status.innerText = "✅ Processing recording...";
+    status.innerText = "Processing recording...";
 }
 
 /* ================== STOP BUTTON CLICK ================== */
@@ -2317,16 +2312,7 @@ newRecordingBtn.onclick = function() {
     
     // Reset audio
     originalAudio.pause();
-    accompanimentAudio.pause();
     originalAudio.currentTime = 0;
-    accompanimentAudio.currentTime = 0;
-    
-    // Clean reference
-    if (referenceAudio) {
-        referenceAudio.pause();
-        referenceAudio.currentTime = 0;
-        referenceAudio = null;
-    }
     
     // Reset UI
     playBtn.style.display = "inline-block";
@@ -2339,27 +2325,31 @@ newRecordingBtn.onclick = function() {
     recordedChunks = [];
     isRecording = false;
     isPlayingRecording = false;
+    isReferencePlaying = false;
     
     // Release URL
     if (lastRecordingURL) {
         URL.revokeObjectURL(lastRecordingURL);
         lastRecordingURL = null;
     }
+    
+    // Clear audio context if exists
+    if (audioContext) {
+        try {
+            audioContext.close();
+        } catch(e) {}
+        audioContext = null;
+    }
 };
 
 /* ================== HELPER FUNCTIONS ================== */
 function resetUIOnError() {
     isRecording = false;
+    isReferencePlaying = false;
     playBtn.style.display = "inline-block";
     recordBtn.style.display = "inline-block";
     stopBtn.style.display = "none";
-    status.innerText = "Ready 🎤";
-    
-    if (referenceAudio) {
-        referenceAudio.pause();
-        referenceAudio.currentTime = 0;
-        referenceAudio = null;
-    }
+    playBtn.innerText = "▶ Play Reference";
     
     if (autoStopTimer) {
         clearTimeout(autoStopTimer);
@@ -2372,14 +2362,6 @@ document.addEventListener('touchstart', async () => {
     // iOS ki audio context unlock cheyadaaniki
     if (isIOS) {
         await ensureAudioContext();
-        // Silent audio play chesi unlock chestam
-        const silentAudio = new Audio();
-        silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ';
-        silentAudio.volume = 0;
-        silentAudio.play().then(() => {
-            silentAudio.pause();
-            silentAudio.currentTime = 0;
-        });
     }
 }, { once: true });
 
@@ -2392,27 +2374,34 @@ document.addEventListener('visibilitychange', async () => {
 
 /* ================== AUDIO END HANDLER ================== */
 originalAudio.addEventListener('ended', () => {
-    if (playBtn.innerText === "⏹ Stop") {
+    if (isReferencePlaying) {
         playBtn.innerText = "▶ Play Reference";
-        status.innerText = "✅ Reference song completed";
+        status.innerText = "✅ Reference completed";
+        isReferencePlaying = false;
         
         setTimeout(() => {
-            if (status.innerText === "✅ Reference song completed") {
+            if (status.innerText === "✅ Reference completed") {
                 status.innerText = "Ready 🎤";
             }
         }, 1500);
     }
 });
 
+accompanimentAudio.addEventListener('ended', () => {
+    if (isRecording) {
+        stopRecording();
+    }
+});
+
 /* ================== WINDOW LOAD ================== */
 window.addEventListener('load', () => {
     console.log("Karaoke Player Loaded - Optimized for Voice Clarity");
-    status.innerText = "Ready 🎤 - Use headphones for best recording";
+    status.innerText = "Ready 🎤 - Use headphones for best results";
     
     // Mobile detection
     if (isMobile) {
         console.log("Mobile device detected");
-        status.innerText = "📱 Ready - Use headphones for clear recording";
+        status.innerText = "📱 Ready - Use headphones for recording";
     }
 });
 
@@ -2433,12 +2422,15 @@ window.addEventListener('resize', () => {
     }
 });
 
-/* ================== IMPORTANT: PREVENT ORIGINAL SONG IN RECORDING ================== */
-// Original song is only for reference playback and is NOT connected to the recording stream
-// The recording ONLY contains:
-// 1. Microphone input (your voice) - processed for clarity
-// 2. Accompaniment track (karaoke version)
-// The reference original song plays separately and is NOT recorded
+/* ================== CLEANUP ON PAGE UNLOAD ================== */
+window.addEventListener('beforeunload', () => {
+    if (lastRecordingURL) {
+        URL.revokeObjectURL(lastRecordingURL);
+    }
+    if (audioContext) {
+        audioContext.close();
+    }
+});
 </script>
 </body>
 </html>
