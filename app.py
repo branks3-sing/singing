@@ -1524,7 +1524,7 @@ canvas {
       <a id="downloadRecordingBtn" href="#" download>
         <button>⬇ Download</button>
       </a>
-      <button id="newRecordingBtn"> ↻ New Recording</button>
+      <button id="newRecordingBtn"> New Recording</button>
     </div>
   </div>
 </div>
@@ -1806,7 +1806,7 @@ recordBtn.onclick = async () => {
             
             finalBg.src = mainBg.src;
             finalDiv.style.display = "flex";
-            finalStatus.innerText = "🎉 Recording Complete!";
+            
             
             // ✅ FIXED: Create proper download link with correct duration
             const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
