@@ -930,8 +930,8 @@ def load_metadata_from_db():
                 "duration": duration
             }
     except:
-    pass
-    return metadata
+        pass
+        return metadata
 
 # Initialize database
 init_session_db()
