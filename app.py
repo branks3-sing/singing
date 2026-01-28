@@ -1815,7 +1815,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         <a id="downloadRecordingBtn" href="#" download>
           <button>⬇ Download</button>
         </a>
-        <button id="newRecordingBtn">New Recording</button>
+        <button id="newRecordingBtn">New</button>
       </div>
     </div>
   </div>
