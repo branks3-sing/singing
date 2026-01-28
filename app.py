@@ -430,6 +430,7 @@ def load_metadata_from_db():
                 "duration": duration
             }
     except:
+        pass
     return metadata
 
 # Initialize database
@@ -440,8 +441,7 @@ def file_to_base64(path):
     if os.path.exists(path):
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode()
-            
-            return ""
+    return ""
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -1247,9 +1247,14 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # ✅ REMOVED DURATION DISPLAY FROM SONG NAME
+                    duration = get_song_duration(s)
+                    if duration:
+                        duration_text = f" [{int(duration//60)}:{int(duration%60):02d}]"
+                    else:
+                        duration_text = " [Duration unknown]"
+                    
                     if st.button(
-                        f"🎶 {s}",
+                        f"🎶 {s}{duration_text}",
                         key=f"song_name_{s}_{idx}",
                         help="Click to play song",
                         use_container_width=True,
@@ -1529,9 +1534,14 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             st.info("👑 Only admin-shared songs appear here for users.")
     else:
         for idx, song in enumerate(uploaded_songs):
-            # ✅ REMOVED DURATION DISPLAY FROM SONG NAME
+            duration = get_song_duration(song)
+            if duration:
+                duration_text = f" [{int(duration//60)}:{int(duration%60):02d}]"
+            else:
+                duration_text = ""
+            
             if st.button(
-                f"✅ *{song}*",
+                f"✅ *{song}*{duration_text}",
                 key=f"user_song_{song}_{idx}",
                 help="Click to play song",
                 use_container_width=True,
@@ -1539,7 +1549,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED STOP BUTTON ISSUE ===============
+# =============== SONG PLAYER WITH FULL DURATION RECORDING FIX ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1656,7 +1666,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180  # Default fallback
 
-    # ✅ FIXED KARAOKE TEMPLATE - FIXED STOP BUTTON ISSUE
+    # ✅ FIXED KARAOKE TEMPLATE - RECORDS FULL SONG DURATION
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1833,7 +1843,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let isRecording = false;
   let isPlayingRecording = false;
   let autoStopTimer = null;
-  let isSongPlaying = false; // ✅ NEW: Track if song is playing
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -1872,27 +1881,22 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       return audioContext;
   }
 
-  /* ================== PLAY/STOP ORIGINAL SONG WITH BUTTON SWITCH ================== */
+  /* ================== PLAY ORIGINAL SONG ================== */
   playBtn.onclick = async function() {
       await ensureAudioContext();
-      
-      if (!isSongPlaying) {
-          // ✅ START PLAYING
+      if (originalAudio.paused) {
           originalAudio.currentTime = 0;
           originalAudio.play().then(() => {
-              isSongPlaying = true;
-              playBtn.innerText = "⏹ Stop Song"; // ✅ IMMEDIATELY CHANGE TO STOP
+              playBtn.innerText = "⏹ Stop Song";
               status.innerText = "🎵 Playing original song...";
           }).catch(e => {
               console.log("Play error:", e);
               status.innerText = "❌ Tap screen first";
           });
       } else {
-          // ✅ STOP PLAYING
           originalAudio.pause();
           originalAudio.currentTime = 0;
-          isSongPlaying = false;
-          playBtn.innerText = "▶ Play Song"; // ✅ IMMEDIATELY CHANGE TO PLAY
+          playBtn.innerText = "▶ Play Song";
           status.innerText = "⏹ Stopped";
       }
   };
@@ -1947,13 +1951,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           if (autoStopTimer) {
               clearTimeout(autoStopTimer);
               autoStopTimer = null;
-          }
-          
-          // Stop any currently playing song
-          if (isSongPlaying) {
-              originalAudio.pause();
-              originalAudio.currentTime = 0;
-              isSongPlaying = false;
           }
           
           // Play original song for reference ONLY (NOT recorded)
@@ -2077,7 +2074,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               // Stop original song
               originalAudio.pause();
               originalAudio.currentTime = 0;
-              isSongPlaying = false;
               
               // Create blob
               if (recordedChunks.length > 0) {
@@ -2179,7 +2175,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       // Stop original song
       originalAudio.pause();
       originalAudio.currentTime = 0;
-      isSongPlaying = false;
       
       // Stop canvas
       if (canvasRafId) {
@@ -2211,13 +2206,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       // Reset audio
       originalAudio.pause();
       originalAudio.currentTime = 0;
-      isSongPlaying = false;
       
-      // ✅ RESET UI - PLAY BUTTON SHOWS "▶ Play Song"
+      // Reset UI
       playBtn.style.display = "inline-block";
-      playBtn.innerText = "▶ Play Song";
       recordBtn.style.display = "inline-block";
       stopBtn.style.display = "none";
+      playBtn.innerText = "▶ Play Song";
       status.innerText = "Ready 🎤";
       
       // Reset state
@@ -2244,12 +2238,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   function resetUIOnError() {
       isRecording = false;
       playBtn.style.display = "inline-block";
-      playBtn.innerText = "▶ Play Song";
       recordBtn.style.display = "inline-block";
       stopBtn.style.display = "none";
-      
-      // Reset song playing state
-      isSongPlaying = false;
+      playBtn.innerText = "▶ Play Song";
       
       // Stop original song
       originalAudio.pause();
@@ -2265,13 +2256,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   document.addEventListener('touchstart', async () => {
       await ensureAudioContext();
   }, { once: true });
-
-  /* ================== SONG ENDED EVENT ================== */
-  originalAudio.addEventListener('ended', function() {
-      isSongPlaying = false;
-      playBtn.innerText = "▶ Play Song"; // ✅ AUTO CHANGE TO PLAY BUTTON
-      status.innerText = "Song finished";
-  });
 
   /* ================== INITIALIZE ================== */
   window.addEventListener('load', () => {
