@@ -1,6 +1,4 @@
-nakku ee code lo UI size anedhi nakku ey mobile nunchi open chesina sare 9:16 vundela update chesi full updated working code send chey based on my code ani correct ga work ayyela em working distrub lekkunda
 
-import streamlit as st
 import os
 import base64
 import json
