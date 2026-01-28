@@ -1539,7 +1539,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED STOP BUTTON ISSUE ===============
+# =============== SONG PLAYER WITHOUT BACK BUTTON ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1815,7 +1815,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         <a id="downloadRecordingBtn" href="#" download>
           <button>⬇ Download</button>
         </a>
-        <button id="newRecordingBtn">New</button>
+        <button id="newRecordingBtn">New Recording</button>
       </div>
     </div>
   </div>
@@ -2299,23 +2299,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     karaoke_html = karaoke_html.replace("%%SONG_NAME%%", selected_song)
     karaoke_html = karaoke_html.replace("%%SONG_DURATION%%", str(song_duration))
 
-    # Back button
-    if st.session_state.role in ["admin", "user"]:
-        col1, col2 = st.columns([5, 1])
-        with col2:
-            if st.button("← Back", key="back_player", type="secondary"):
-                if st.session_state.role == "admin":
-                    st.session_state.page = "Admin Dashboard"
-                    st.session_state.selected_song = None
-                elif st.session_state.role == "user":
-                    st.session_state.page = "User Dashboard"
-                    st.session_state.selected_song = None
-                
-                if "song" in st.query_params:
-                    del st.query_params["song"]
-                
-                save_session_to_db()
-                st.rerun()
+    # ✅ REMOVED BACK BUTTON SECTION COMPLETELY
+    # No back button will be shown for admin or user
 
     # Display karaoke player
     html(f'<div class="karaoke-container">{karaoke_html}</div>', height=640, width=360, scrolling=False)
