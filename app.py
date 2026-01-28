@@ -1811,7 +1811,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       <img class="reel-bg" id="finalBg">
       <div id="finalStatus">Recording Complete!</div>
       <div class="controls">
-        <button id="playRecordingBtn">▶ Play Recording</button>
+        <button id="playRecordingBtn">▶ Play</button>
         <a id="downloadRecordingBtn" href="#" download>
           <button>⬇ Download</button>
         </a>
