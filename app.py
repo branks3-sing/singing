@@ -440,7 +440,8 @@ def file_to_base64(path):
     if os.path.exists(path):
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode()
-    return ""
+            
+            return ""
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
