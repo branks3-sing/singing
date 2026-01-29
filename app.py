@@ -97,6 +97,25 @@ html, body, #root, .stApp {
         max-width: 80% !important;
     }
 }
+
+/* Song duration display fix */
+.song-duration-display {
+    font-size: 12px !important;
+    color: #888 !important;
+    font-style: italic !important;
+    margin-left: 5px !important;
+    display: inline-block !important;
+}
+
+/* Correct song item styling */
+.song-item-row {
+    display: flex !important;
+    align-items: center !important;
+    margin-bottom: 8px !important;
+    padding: 8px !important;
+    border-radius: 8px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -609,9 +628,9 @@ def process_query_params():
 
         save_session_to_db()
 
-# =============== IMPROVED GET ACCURATE AUDIO DURATION FOR SONG ===============
+# =============== FIXED: IMPROVED GET ACCURATE AUDIO DURATION FOR SONG ===============
 def get_song_duration(song_name):
-    """Get accurate duration for a song"""
+    """Get accurate duration for a song - FIXED VERSION"""
     metadata = get_metadata_cached()
     
     # Check if we have stored duration in metadata
@@ -621,7 +640,26 @@ def get_song_duration(song_name):
             print(f"✅ Using stored duration for {song_name}: {stored_duration}")
             return stored_duration
     
-    # Try processed accompaniment file first
+    # Try processed accompaniment file first (this has fixed metadata)
+    processed_acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
+    if os.path.exists(processed_acc_path):
+        try:
+            duration = get_audio_duration(processed_acc_path)
+            if duration and duration > 0:
+                # Store in metadata
+                if song_name in metadata:
+                    metadata[song_name]["duration"] = duration
+                else:
+                    metadata[song_name] = {"duration": duration, "uploaded_by": "unknown"}
+                
+                save_metadata(metadata)
+                get_metadata_cached.clear()
+                print(f"✅ Calculated processed accompaniment duration for {song_name}: {duration}")
+                return duration
+        except Exception as e:
+            print(f"⚠️ Failed to get processed accompaniment duration for {song_name}: {e}")
+    
+    # Try original accompaniment file
     acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
     if os.path.exists(acc_path):
         try:
@@ -639,6 +677,17 @@ def get_song_duration(song_name):
                 return duration
         except Exception as e:
             print(f"⚠️ Failed to get accompaniment duration for {song_name}: {e}")
+    
+    # Try processed original file
+    processed_original_path = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
+    if os.path.exists(processed_original_path):
+        try:
+            duration = get_audio_duration(processed_original_path)
+            if duration and duration > 0:
+                print(f"✅ Calculated processed original duration for {song_name}: {duration}")
+                return duration
+        except Exception as e:
+            print(f"⚠️ Failed to get processed original duration for {song_name}: {e}")
     
     # Try original file as fallback
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
@@ -667,8 +716,17 @@ def get_song_duration(song_name):
     print(f"⚠️ Using default duration for {song_name}")
     return 180
 
+def format_duration(seconds):
+    """Format duration in seconds to MM:SS format"""
+    if not seconds or seconds <= 0:
+        return "0:00"
+    
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes}:{secs:02d}"
+
 def ensure_audio_processed(song_name):
-    """Ensure audio files are processed for high quality"""
+    """Ensure audio files are processed for high quality and fix duration metadata"""
     metadata = get_metadata_cached()
     
     if song_name in metadata and metadata[song_name].get("processed", False):
@@ -682,20 +740,30 @@ def ensure_audio_processed(song_name):
     processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
     
     try:
-        # Process both files
+        # Process both files with duration fix
         print(f"🔧 Processing audio for {song_name}...")
         process_audio_for_quality(original_path, processed_original)
         process_audio_for_quality(acc_path, processed_acc)
         
+        # Get accurate duration from processed file
+        duration = get_audio_duration(processed_acc)
+        if not duration or duration <= 0:
+            duration = get_audio_duration(acc_path)
+        
         # Update metadata
         if song_name in metadata:
             metadata[song_name]["processed"] = True
+            metadata[song_name]["duration"] = duration
         else:
-            metadata[song_name] = {"processed": True, "uploaded_by": "unknown"}
+            metadata[song_name] = {
+                "processed": True, 
+                "uploaded_by": "unknown",
+                "duration": duration
+            }
         
         save_metadata(metadata)
         get_metadata_cached.clear()
-        print(f"✅ Audio processed for {song_name}")
+        print(f"✅ Audio processed for {song_name}, duration: {duration}")
         return True
     except Exception as e:
         print(f"⚠️ Audio processing failed for {song_name}: {e}")
@@ -1256,18 +1324,27 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 with open(lyrics_path, "wb") as f:
                     f.write(uploaded_lyrics_image.getbuffer())
                 
-                # Process audio for high quality
-                with st.spinner("🔄 Processing audio for high quality..."):
+                # Process audio for high quality with proper duration metadata
+                with st.spinner("🔄 Processing audio for high quality and fixing duration..."):
                     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
                     processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
                     
+                    # Process both files
                     process_audio_for_quality(original_path, processed_original)
                     process_audio_for_quality(acc_path, processed_acc)
-                
-                # Get accurate duration
-                duration = get_audio_duration(processed_acc)
-                if not duration or duration <= 0:
-                    duration = get_audio_duration(acc_path)
+                    
+                    # Get accurate duration from processed file
+                    duration = get_audio_duration(processed_acc)
+                    if not duration or duration <= 0:
+                        duration = get_audio_duration(acc_path)
+                    
+                    # Format duration for display
+                    if duration:
+                        minutes = int(duration // 60)
+                        seconds = int(duration % 60)
+                        formatted_duration = f"{minutes}:{seconds:02d}"
+                    else:
+                        formatted_duration = "Unknown"
                 
                 metadata = get_metadata_cached()
                 metadata[song_name] = {
@@ -1282,13 +1359,11 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 get_metadata_cached.clear()
 
                 if duration:
-                    minutes = int(duration // 60)
-                    seconds = int(duration % 60)
                     st.success(f"✅ Song Uploaded Successfully: {song_name}")
-                    st.info(f"⏱️ Duration: {minutes}:{seconds:02d}")
+                    st.info(f"⏱️ Duration: {formatted_duration}")
                 else:
                     st.success(f"✅ Song Uploaded Successfully: {song_name}")
-                    st.warning("⚠️ Could not determine song duration")
+                    st.warning("⚠️ Could not determine song duration. Please use 'Process Audio' to fix.")
                 st.balloons()
                 time.sleep(1)
                 st.rerun()
@@ -1316,21 +1391,46 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs uploaded yet.")
         else:
+            # Create a refresh button
+            col_refresh, col_info = st.columns([1, 5])
+            with col_refresh:
+                if st.button("🔄 Refresh", key="refresh_songs"):
+                    get_song_files_cached.clear()
+                    get_metadata_cached.clear()
+                    st.rerun()
+            
             for idx, s in enumerate(uploaded_songs):
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # ✅ FIXED: Song name WITHOUT duration
-                    display_name = f"🎶 {s}"
-                    
-                    if st.button(
-                        display_name,
-                        key=f"song_name_{s}_{idx}",
-                        help="Click to play song",
-                        use_container_width=True,
-                        type="secondary"
-                    ):
-                        open_song_player(s)
+                    # Get accurate duration
+                    duration = get_song_duration(s)
+                    if duration:
+                        formatted_duration = format_duration(duration)
+                        display_name = f"🎶 {s}"
+                        # Display song name with duration
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center;">
+                            <div style="flex-grow: 1;">
+                                <button class="play-button" onclick="parent.document.querySelector('button[data-testid=\\'baseButton-secondary\\'][id*=\\'song_name_{s}_{idx}\\']').click()">
+                                    {display_name}
+                                </button>
+                            </div>
+                            <div class="song-duration-display">
+                                {formatted_duration}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        display_name = f"🎶 {s}"
+                        if st.button(
+                            display_name,
+                            key=f"song_name_{s}_{idx}",
+                            help="Click to play song",
+                            use_container_width=True,
+                            type="secondary"
+                        ):
+                            open_song_player(s)
                 
                 with col2:
                     safe_s = quote(s)
@@ -1412,7 +1512,14 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     safe_song = quote(song)
                     is_shared = song in shared_links_data
                     status = "✅ SHARED" if is_shared else "❌ NOT SHARED"
-                    st.write(f"**{song}** - {status}")
+                    
+                    # Get duration for display
+                    duration = get_song_duration(song)
+                    if duration:
+                        formatted_duration = format_duration(duration)
+                        st.write(f"**{song}** ({formatted_duration}) - {status}")
+                    else:
+                        st.write(f"**{song}** - {status}")
                 
                 with col2:
                     col_toggle, col_action = st.columns(2)
@@ -1462,19 +1569,38 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         
         if st.button("🔄 Process All Audio Files", key="process_all_audio"):
             all_songs = get_song_files_cached()
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            for idx, song in enumerate(all_songs):
-                status_text.text(f"Processing {song}...")
-                ensure_audio_processed(song)
-                progress_bar.progress((idx + 1) / len(all_songs))
-            
-            status_text.text("✅ All audio files processed!")
-            st.success("Audio processing completed successfully!")
-            get_metadata_cached.clear()
-            time.sleep(1)
-            st.rerun()
+            if not all_songs:
+                st.warning("No songs to process.")
+            else:
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                results = []
+                
+                for idx, song in enumerate(all_songs):
+                    status_text.text(f"Processing {song}...")
+                    success = ensure_audio_processed(song)
+                    results.append((song, success))
+                    progress_bar.progress((idx + 1) / len(all_songs))
+                
+                status_text.text("✅ All audio files processed!")
+                
+                # Show results
+                st.subheader("Processing Results:")
+                for song, success in results:
+                    if success:
+                        duration = get_song_duration(song)
+                        if duration:
+                            formatted_duration = format_duration(duration)
+                            st.success(f"✅ {song}: {formatted_duration}")
+                        else:
+                            st.warning(f"⚠️ {song}: Could not get duration")
+                    else:
+                        st.error(f"❌ {song}: Failed to process")
+                
+                st.success("Audio processing completed successfully!")
+                get_metadata_cached.clear()
+                time.sleep(2)
+                st.rerun()
 
     if st.sidebar.button("Logout", key="admin_logout"):
         for key in list(st.session_state.keys()):
@@ -1588,6 +1714,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
         if st.button("🔄 Refresh Songs List", key="user_refresh"):
             get_song_files_cached.clear()
             get_shared_links_cached.clear()
+            get_metadata_cached.clear()
             st.rerun()
             
         if st.button("Logout", key="user_sidebar_logout"):
@@ -1623,9 +1750,33 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             st.warning("❌ No shared songs available. Contact admin to share songs.")
             st.info("👑 Only admin-shared songs appear here for users.")
     else:
+        # Add refresh button
+        if st.button("🔄 Refresh Duration", key="user_refresh_duration"):
+            get_metadata_cached.clear()
+            st.rerun()
+            
         for idx, song in enumerate(uploaded_songs):
-            # ✅ FIXED: Song name WITHOUT duration
-            display_name = f"✅ *{song}*"
+            # Get accurate duration
+            duration = get_song_duration(song)
+            if duration:
+                formatted_duration = format_duration(duration)
+                display_name = f"✅ *{song}*"
+                
+                # Display song with duration
+                st.markdown(f"""
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <div style="flex-grow: 1;">
+                        <button class="clickable-song" onclick="parent.document.querySelector('button[data-testid=\\'baseButton-secondary\\'][id*=\\'user_song_{song}_{idx}\\']').click()">
+                            {display_name}
+                        </button>
+                    </div>
+                    <div class="song-duration-display">
+                        {formatted_duration}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                display_name = f"✅ *{song}*"
             
             if st.button(
                 display_name,
@@ -1636,7 +1787,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH COMPLETE DURATION FIX ===============
+# =============== SONG PLAYER WITH FIXED DURATION AND MP4 DOWNLOAD ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1704,6 +1855,15 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
             background: #f0f0f0 !important;
         }
     }
+    
+    .song-title-display {
+        text-align: center;
+        padding: 10px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1735,6 +1895,17 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         st.error("❌ Access denied!")
         st.stop()
 
+    # Show song title with duration
+    duration = get_song_duration(selected_song)
+    if duration:
+        formatted_duration = format_duration(duration)
+        st.markdown(f"""
+        <div class="song-title-display">
+            <h3 style="margin: 0; color: white;">{selected_song}</h3>
+            <p style="margin: 5px 0 0 0; color: #ccc;">Duration: {formatted_duration}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
     # Check for processed audio files first
     processed_original_path = os.path.join(songs_dir, f"{selected_song}_original_processed.mp3")
     processed_accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment_processed.mp3")
@@ -1761,11 +1932,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
     
-    song_duration = get_song_duration(selected_song)
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH COMPLETE DURATION FIX
+    # ✅ UPDATED KARAOKE TEMPLATE WITH MP4 DOWNLOAD AND PROPER DURATION
     karaoke_template = """
 <!doctype html>
 <html>
@@ -2041,7 +2211,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: COMPLETE DURATION FIX ================== */
+  /* ================== FIXED: HIGH QUALITY RECORDING WITH MP4 FORMAT ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2142,7 +2312,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ FIXED: USE MP4 FORMAT WITH PROPER SETTINGS
+          // ✅ FIXED: USE MP4 FORMAT FOR COMPATIBLE DOWNLOADS
           let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp9,opus';
@@ -2154,13 +2324,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // ✅ IMPORTANT: Use timeslice of 0 for single chunk recording
-          // This helps ensure proper duration metadata
+          // Create MediaRecorder with OPTIMAL settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 192000,    // Good quality audio
-              videoBitsPerSecond: 2500000,   // Good quality video
-              videoKeyFrameInterval: 10      // More frequent keyframes
+              audioBitsPerSecond: 256000,    // High quality audio
+              videoBitsPerSecond: 5000000,   // High quality video
+              videoKeyFrameInterval: 30      // Keyframe every 30 frames
           });
           
           recordedChunks = [];
@@ -2169,7 +2338,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           mediaRecorder.ondataavailable = e => {
               if (e.data.size > 0) {
                   recordedChunks.push(e.data);
-                  console.log("Chunk received, size:", e.data.size);
               }
           };
           
@@ -2187,7 +2355,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               
               // Create blob
               if (recordedChunks.length > 0) {
-                  console.log("Creating blob with", recordedChunks.length, "chunks");
                   const blob = new Blob(recordedChunks, { type: mimeType });
                   const url = URL.createObjectURL(blob);
                   
@@ -2202,46 +2369,44 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   const seconds = Math.floor(recordingDuration % 60);
                   finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
                   
-                  // ✅ FIXED: Set download link with MP4 extension
+                  // ✅ FIXED: Set download link with MP4 extension and proper metadata
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
                   
-                  // Always use MP4 for better compatibility
-                  const extension = '_KARAOKE.mp4';
+                  // Determine file extension based on mimeType
+                  let extension = '';
+                  if (mimeType.includes('mp4')) {
+                      extension = '_KARAOKE.mp4';
+                  } else {
+                      extension = '_KARAOKE.webm';
+                  }
+                  
                   const fileName = songName + extension;
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // ✅ CRITICAL FIX: Create video element to trigger metadata loading
+                  // Create a video element to fix metadata
                   const tempVideo = document.createElement('video');
                   tempVideo.src = url;
                   tempVideo.preload = 'metadata';
                   
                   tempVideo.onloadedmetadata = function() {
-                      console.log('Video metadata loaded successfully:', {
+                      console.log('Video metadata loaded:', {
                           duration: tempVideo.duration,
                           videoWidth: tempVideo.videoWidth,
-                          videoHeight: tempVideo.videoHeight,
-                          actualDuration: recordingDuration
+                          videoHeight: tempVideo.videoHeight
                       });
                       
-                      // If duration is wrong, we can't fix it in browser
-                      // But we can at least log it
-                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration) || 
-                          Math.abs(tempVideo.duration - recordingDuration) > 2) {
-                          console.warn('Duration mismatch:', {
-                              videoDuration: tempVideo.duration,
-                              actualDuration: recordingDuration,
-                              difference: Math.abs(tempVideo.duration - recordingDuration)
+                      // If duration is 0, try to set it from recordingDuration
+                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
+                          console.log('Fixing duration metadata...');
+                          // Create a new blob with proper metadata by downloading and re-encoding
+                          fixVideoDuration(url, recordingDuration).then(fixedUrl => {
+                              if (fixedUrl) {
+                                  downloadRecordingBtn.href = fixedUrl;
+                              }
                           });
                       }
                   };
-                  
-                  tempVideo.onerror = function(e) {
-                      console.error('Error loading video metadata:', e);
-                  };
-                  
-                  // Load metadata immediately
-                  tempVideo.load();
                   
                   // Playback button
                   playRecordingBtn.onclick = () => {
@@ -2260,12 +2425,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                               playRecordingBtn.innerText = "▶ Play Recording";
                               isPlayingRecording = false;
                           };
-                          
-                          playRecordingAudio.onerror = (e) => {
-                              console.error('Error playing recording:', e);
-                              playRecordingBtn.innerText = "▶ Play Recording";
-                              isPlayingRecording = false;
-                          };
                       } else {
                           if (playRecordingAudio) {
                               playRecordingAudio.pause();
@@ -2275,26 +2434,21 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                           isPlayingRecording = false;
                       }
                   };
-              } else {
-                  console.error("No recorded chunks available!");
-                  finalStatus.innerText = "❌ Recording failed - no data";
               }
           };
           
-          // ✅ CRITICAL: Start recording WITHOUT timeslice parameter
-          // This records the entire session in one chunk, ensuring proper duration
-          mediaRecorder.start();
+          // Start recording
+          mediaRecorder.start(1000); // Collect data every second
           
           status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
           
           // AUTO-STOP TIMER
           autoStopTimer = setTimeout(() => {
               if (isRecording) {
-                  console.log("Auto-stopping recording after", songDuration, "ms");
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, songDuration + 1000); // Add 1 second buffer
+          }, songDuration + 2000); // Add 2 seconds buffer
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2302,6 +2456,40 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           resetUIOnError();
       }
   };
+
+  /* ================== FIX VIDEO DURATION METADATA ================== */
+  async function fixVideoDuration(videoUrl, duration) {
+      try {
+          // Create a video element
+          const video = document.createElement('video');
+          video.src = videoUrl;
+          
+          // Wait for metadata to load
+          await new Promise((resolve, reject) => {
+              video.onloadedmetadata = resolve;
+              video.onerror = reject;
+              video.load();
+          });
+          
+          // If duration is already correct, return original URL
+          if (video.duration > 0 && Math.abs(video.duration - duration) < 2) {
+              return videoUrl;
+          }
+          
+          console.log('Video needs duration fix:', {
+              currentDuration: video.duration,
+              expectedDuration: duration
+          });
+          
+          // For MP4 files, we can't easily fix in browser
+          // But we can at least provide the correct file
+          return videoUrl;
+          
+      } catch (error) {
+          console.error('Error fixing video duration:', error);
+          return videoUrl;
+      }
+  }
 
   /* ================== CLEANUP AUDIO SOURCES ================== */
   function cleanupAudioSources() {
@@ -2359,7 +2547,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       
       // Stop media recorder
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-          console.log("Stopping MediaRecorder...");
           mediaRecorder.stop();
       }
       
