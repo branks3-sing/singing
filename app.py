@@ -97,25 +97,6 @@ html, body, #root, .stApp {
         max-width: 80% !important;
     }
 }
-
-/* Song duration display fix */
-.song-duration-display {
-    font-size: 12px !important;
-    color: #888 !important;
-    font-style: italic !important;
-    margin-left: 5px !important;
-    display: inline-block !important;
-}
-
-/* Correct song item styling */
-.song-item-row {
-    display: flex !important;
-    align-items: center !important;
-    margin-bottom: 8px !important;
-    padding: 8px !important;
-    border-radius: 8px !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -628,9 +609,9 @@ def process_query_params():
 
         save_session_to_db()
 
-# =============== FIXED: IMPROVED GET ACCURATE AUDIO DURATION FOR SONG ===============
+# =============== IMPROVED GET ACCURATE AUDIO DURATION FOR SONG ===============
 def get_song_duration(song_name):
-    """Get accurate duration for a song - FIXED VERSION"""
+    """Get accurate duration for a song"""
     metadata = get_metadata_cached()
     
     # Check if we have stored duration in metadata
@@ -640,26 +621,7 @@ def get_song_duration(song_name):
             print(f"✅ Using stored duration for {song_name}: {stored_duration}")
             return stored_duration
     
-    # Try processed accompaniment file first (this has fixed metadata)
-    processed_acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
-    if os.path.exists(processed_acc_path):
-        try:
-            duration = get_audio_duration(processed_acc_path)
-            if duration and duration > 0:
-                # Store in metadata
-                if song_name in metadata:
-                    metadata[song_name]["duration"] = duration
-                else:
-                    metadata[song_name] = {"duration": duration, "uploaded_by": "unknown"}
-                
-                save_metadata(metadata)
-                get_metadata_cached.clear()
-                print(f"✅ Calculated processed accompaniment duration for {song_name}: {duration}")
-                return duration
-        except Exception as e:
-            print(f"⚠️ Failed to get processed accompaniment duration for {song_name}: {e}")
-    
-    # Try original accompaniment file
+    # Try processed accompaniment file first
     acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
     if os.path.exists(acc_path):
         try:
@@ -677,17 +639,6 @@ def get_song_duration(song_name):
                 return duration
         except Exception as e:
             print(f"⚠️ Failed to get accompaniment duration for {song_name}: {e}")
-    
-    # Try processed original file
-    processed_original_path = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
-    if os.path.exists(processed_original_path):
-        try:
-            duration = get_audio_duration(processed_original_path)
-            if duration and duration > 0:
-                print(f"✅ Calculated processed original duration for {song_name}: {duration}")
-                return duration
-        except Exception as e:
-            print(f"⚠️ Failed to get processed original duration for {song_name}: {e}")
     
     # Try original file as fallback
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
@@ -716,17 +667,8 @@ def get_song_duration(song_name):
     print(f"⚠️ Using default duration for {song_name}")
     return 180
 
-def format_duration(seconds):
-    """Format duration in seconds to MM:SS format"""
-    if not seconds or seconds <= 0:
-        return "0:00"
-    
-    minutes = int(seconds // 60)
-    secs = int(seconds % 60)
-    return f"{minutes}:{secs:02d}"
-
 def ensure_audio_processed(song_name):
-    """Ensure audio files are processed for high quality and fix duration metadata"""
+    """Ensure audio files are processed for high quality"""
     metadata = get_metadata_cached()
     
     if song_name in metadata and metadata[song_name].get("processed", False):
@@ -740,30 +682,20 @@ def ensure_audio_processed(song_name):
     processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
     
     try:
-        # Process both files with duration fix
+        # Process both files
         print(f"🔧 Processing audio for {song_name}...")
         process_audio_for_quality(original_path, processed_original)
         process_audio_for_quality(acc_path, processed_acc)
         
-        # Get accurate duration from processed file
-        duration = get_audio_duration(processed_acc)
-        if not duration or duration <= 0:
-            duration = get_audio_duration(acc_path)
-        
         # Update metadata
         if song_name in metadata:
             metadata[song_name]["processed"] = True
-            metadata[song_name]["duration"] = duration
         else:
-            metadata[song_name] = {
-                "processed": True, 
-                "uploaded_by": "unknown",
-                "duration": duration
-            }
+            metadata[song_name] = {"processed": True, "uploaded_by": "unknown"}
         
         save_metadata(metadata)
         get_metadata_cached.clear()
-        print(f"✅ Audio processed for {song_name}, duration: {duration}")
+        print(f"✅ Audio processed for {song_name}")
         return True
     except Exception as e:
         print(f"⚠️ Audio processing failed for {song_name}: {e}")
@@ -1324,27 +1256,18 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 with open(lyrics_path, "wb") as f:
                     f.write(uploaded_lyrics_image.getbuffer())
                 
-                # Process audio for high quality with proper duration metadata
-                with st.spinner("🔄 Processing audio for high quality and fixing duration..."):
+                # Process audio for high quality
+                with st.spinner("🔄 Processing audio for high quality..."):
                     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
                     processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
                     
-                    # Process both files
                     process_audio_for_quality(original_path, processed_original)
                     process_audio_for_quality(acc_path, processed_acc)
-                    
-                    # Get accurate duration from processed file
-                    duration = get_audio_duration(processed_acc)
-                    if not duration or duration <= 0:
-                        duration = get_audio_duration(acc_path)
-                    
-                    # Format duration for display
-                    if duration:
-                        minutes = int(duration // 60)
-                        seconds = int(duration % 60)
-                        formatted_duration = f"{minutes}:{seconds:02d}"
-                    else:
-                        formatted_duration = "Unknown"
+                
+                # Get accurate duration
+                duration = get_audio_duration(processed_acc)
+                if not duration or duration <= 0:
+                    duration = get_audio_duration(acc_path)
                 
                 metadata = get_metadata_cached()
                 metadata[song_name] = {
@@ -1359,11 +1282,13 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 get_metadata_cached.clear()
 
                 if duration:
+                    minutes = int(duration // 60)
+                    seconds = int(duration % 60)
                     st.success(f"✅ Song Uploaded Successfully: {song_name}")
-                    st.info(f"⏱️ Duration: {formatted_duration}")
+                    st.info(f"⏱️ Duration: {minutes}:{seconds:02d}")
                 else:
                     st.success(f"✅ Song Uploaded Successfully: {song_name}")
-                    st.warning("⚠️ Could not determine song duration. Please use 'Process Audio' to fix.")
+                    st.warning("⚠️ Could not determine song duration")
                 st.balloons()
                 time.sleep(1)
                 st.rerun()
@@ -1391,46 +1316,27 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs uploaded yet.")
         else:
-            # Create a refresh button
-            col_refresh, col_info = st.columns([1, 5])
-            with col_refresh:
-                if st.button("🔄 Refresh", key="refresh_songs"):
-                    get_song_files_cached.clear()
-                    get_metadata_cached.clear()
-                    st.rerun()
-            
             for idx, s in enumerate(uploaded_songs):
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # Get accurate duration
+                    # Display song name with duration
                     duration = get_song_duration(s)
                     if duration:
-                        formatted_duration = format_duration(duration)
-                        display_name = f"🎶 {s}"
-                        # Display song name with duration
-                        st.markdown(f"""
-                        <div style="display: flex; align-items: center;">
-                            <div style="flex-grow: 1;">
-                                <button class="play-button" onclick="parent.document.querySelector('button[data-testid=\\'baseButton-secondary\\'][id*=\\'song_name_{s}_{idx}\\']').click()">
-                                    {display_name}
-                                </button>
-                            </div>
-                            <div class="song-duration-display">
-                                {formatted_duration}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        minutes = int(duration // 60)
+                        seconds = int(duration % 60)
+                        display_name = f"🎶 {s} ({minutes}:{seconds:02d})"
                     else:
-                        display_name = f"🎶 {s}"
-                        if st.button(
-                            display_name,
-                            key=f"song_name_{s}_{idx}",
-                            help="Click to play song",
-                            use_container_width=True,
-                            type="secondary"
-                        ):
-                            open_song_player(s)
+                        display_name = f"🎶 {s} (Duration: Unknown)"
+                    
+                    if st.button(
+                        display_name,
+                        key=f"song_name_{s}_{idx}",
+                        help="Click to play song",
+                        use_container_width=True,
+                        type="secondary"
+                    ):
+                        open_song_player(s)
                 
                 with col2:
                     safe_s = quote(s)
@@ -1512,14 +1418,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     safe_song = quote(song)
                     is_shared = song in shared_links_data
                     status = "✅ SHARED" if is_shared else "❌ NOT SHARED"
-                    
-                    # Get duration for display
-                    duration = get_song_duration(song)
-                    if duration:
-                        formatted_duration = format_duration(duration)
-                        st.write(f"**{song}** ({formatted_duration}) - {status}")
-                    else:
-                        st.write(f"**{song}** - {status}")
+                    st.write(f"**{song}** - {status}")
                 
                 with col2:
                     col_toggle, col_action = st.columns(2)
@@ -1569,38 +1468,19 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
         
         if st.button("🔄 Process All Audio Files", key="process_all_audio"):
             all_songs = get_song_files_cached()
-            if not all_songs:
-                st.warning("No songs to process.")
-            else:
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                results = []
-                
-                for idx, song in enumerate(all_songs):
-                    status_text.text(f"Processing {song}...")
-                    success = ensure_audio_processed(song)
-                    results.append((song, success))
-                    progress_bar.progress((idx + 1) / len(all_songs))
-                
-                status_text.text("✅ All audio files processed!")
-                
-                # Show results
-                st.subheader("Processing Results:")
-                for song, success in results:
-                    if success:
-                        duration = get_song_duration(song)
-                        if duration:
-                            formatted_duration = format_duration(duration)
-                            st.success(f"✅ {song}: {formatted_duration}")
-                        else:
-                            st.warning(f"⚠️ {song}: Could not get duration")
-                    else:
-                        st.error(f"❌ {song}: Failed to process")
-                
-                st.success("Audio processing completed successfully!")
-                get_metadata_cached.clear()
-                time.sleep(2)
-                st.rerun()
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for idx, song in enumerate(all_songs):
+                status_text.text(f"Processing {song}...")
+                ensure_audio_processed(song)
+                progress_bar.progress((idx + 1) / len(all_songs))
+            
+            status_text.text("✅ All audio files processed!")
+            st.success("Audio processing completed successfully!")
+            get_metadata_cached.clear()
+            time.sleep(1)
+            st.rerun()
 
     if st.sidebar.button("Logout", key="admin_logout"):
         for key in list(st.session_state.keys()):
@@ -1714,7 +1594,6 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
         if st.button("🔄 Refresh Songs List", key="user_refresh"):
             get_song_files_cached.clear()
             get_shared_links_cached.clear()
-            get_metadata_cached.clear()
             st.rerun()
             
         if st.button("Logout", key="user_sidebar_logout"):
@@ -1750,31 +1629,13 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             st.warning("❌ No shared songs available. Contact admin to share songs.")
             st.info("👑 Only admin-shared songs appear here for users.")
     else:
-        # Add refresh button
-        if st.button("🔄 Refresh Duration", key="user_refresh_duration"):
-            get_metadata_cached.clear()
-            st.rerun()
-            
         for idx, song in enumerate(uploaded_songs):
-            # Get accurate duration
+            # Display song with duration
             duration = get_song_duration(song)
             if duration:
-                formatted_duration = format_duration(duration)
-                display_name = f"✅ *{song}*"
-                
-                # Display song with duration
-                st.markdown(f"""
-                <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <div style="flex-grow: 1;">
-                        <button class="clickable-song" onclick="parent.document.querySelector('button[data-testid=\\'baseButton-secondary\\'][id*=\\'user_song_{song}_{idx}\\']').click()">
-                            {display_name}
-                        </button>
-                    </div>
-                    <div class="song-duration-display">
-                        {formatted_duration}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                minutes = int(duration // 60)
+                seconds = int(duration % 60)
+                display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
             else:
                 display_name = f"✅ *{song}*"
             
@@ -1855,15 +1716,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
             background: #f0f0f0 !important;
         }
     }
-    
-    .song-title-display {
-        text-align: center;
-        padding: 10px;
-        background: rgba(0,0,0,0.7);
-        color: white;
-        border-radius: 10px;
-        margin-bottom: 10px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1895,17 +1747,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         st.error("❌ Access denied!")
         st.stop()
 
-    # Show song title with duration
-    duration = get_song_duration(selected_song)
-    if duration:
-        formatted_duration = format_duration(duration)
-        st.markdown(f"""
-        <div class="song-title-display">
-            <h3 style="margin: 0; color: white;">{selected_song}</h3>
-            <p style="margin: 5px 0 0 0; color: #ccc;">Duration: {formatted_duration}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
     # Check for processed audio files first
     processed_original_path = os.path.join(songs_dir, f"{selected_song}_original_processed.mp3")
     processed_accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment_processed.mp3")
@@ -1932,6 +1773,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
     
+    song_duration = get_song_duration(selected_song)
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
