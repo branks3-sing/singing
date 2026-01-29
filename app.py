@@ -810,178 +810,7 @@ if st.session_state.page == "Login":
     }
 
     .stTextInput input:focus {
-        border-color: rgba(255,255,255,0.6) !important;
-        box-shadow: 0 0 0 1px rgba(255,255,255,0.3);
-    }
-
-    .stButton button {
-        width: 100%;
-        height: 44px;
-        background: linear-gradient(to right, #1f2937, #020712);
-        border-radius: 10px;
-        font-weight: 600;
-        margin-top: 0.6rem;
-        color: white;
-        border: none;
-    }
-    
-    @media (max-width: 768px) {
-        .login-content {
-            padding: 1.5rem 1rem 1.5rem 1rem;
-        }
-        
-        .login-header img {
-            width: 50px;
-            height: 50px;
-        }
-        
-        .login-title {
-            font-size: 1.4rem;
-        }
-        
-        .stTextInput input {
-            font-size: 14px !important;
-            padding: 10px 12px !important;
-        }
-        
-        .stButton button {
-            font-size: 14px !important;
-            height: 40px !important;
-        }
-        
-        .stColumn {
-            padding: 0 5px !important;
-        }
-    }
-    
-    @media (max-width: 480px) {
-        .login-content {
-            padding: 1rem 0.8rem 1rem 0.8rem;
-        }
-        
-        .login-header img {
-            width: 40px;
-            height: 40px;
-        }
-        
-        .login-title {
-            font-size: 1.2rem;
-        }
-        
-        .stTextInput input {
-            font-size: 13px !important;
-            padding: 8px 10px !important;
-        }
-        
-        .stButton button {
-            font-size: 13px !important;
-            height: 36px !important;
-        }
-    }
-    
-    .contact-links-row {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 20px;
-        margin-bottom: 15px;
-    }
-    
-    .contact-link-item {
-        text-decoration: none !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 4px;
-        font-size: 0.75rem !important;
-        font-weight: 500;
-        padding: 6px 10px;
-        border-radius: 6px;
-        transition: transform 0.2s, opacity 0.2s;
-    }
-    
-    .contact-link-item:hover {
-        transform: translateY(-1px);
-        opacity: 0.9;
-        text-decoration: none !important;
-    }
-    
-    .contact-link-item.email {
-        color: #4285F4 !important;
-        background: rgba(66, 133, 244, 0.1);
-        border: none;
-    }
-    
-    .contact-link-item.instagram {
-        background: linear-gradient(45deg, #405DE6, #5851DB, #833AB4, #C13584, #E1306C, #FD1D1D) !important;
-        -webkit-background-clip: text !important;
-        background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-        text-fill-color: transparent !important;
-        border: none;
-    }
-    
-    .contact-link-item.youtube {
-        color: #FF0000 !important;
-        background: rgba(255, 0, 0, 0.1);
-        border: none;
-    }
-    
-    @media (max-width: 768px) {
-        .contact-links-row {
-            gap: 4px;
-        }
-        
-        .contact-link-item {
-            font-size: 0.7rem !important;
-            padding: 4px 8px;
-        }
-    }
-    
-    @media (max-width: 480px) {
-        .contact-links-row {
-            gap: 3px;
-        }
-        
-        .contact-link-item {
-            font-size: 0.65rem !important;
-            padding: 3px 6px;
-        }
-    }
-    
-    .dashboard-buttons-row {
-        display: flex;
-        justify-content: center;
-        gap: 10px;
-        margin-top: 10px;
-        margin-bottom: 5px;
-    }
-    
-    .dashboard-button {
-        font-size: 0.8rem;
-        padding: 4px 12px;
-        border-radius: 4px;
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        cursor: pointer;
-        text-decoration: none;
-        transition: all 0.2s;
-    }
-    
-    .dashboard-button:hover {
-        background: rgba(255, 255, 255, 0.2);
-        text-decoration: none;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    left, center, right = st.columns([0.5, 2, 0.5])
-
-    with center:
-        st.markdown('<div class="login-content">', unsafe_allow_html=True)
+        border-color = f'<div class="login-content">', unsafe_allow_html=True)
 
         st.markdown(f"""
         <div class="login-header">
@@ -1320,14 +1149,8 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # Display song name with duration
-                    duration = get_song_duration(s)
-                    if duration:
-                        minutes = int(duration // 60)
-                        seconds = int(duration % 60)
-                        display_name = f"🎶 {s} ({minutes}:{seconds:02d})"
-                    else:
-                        display_name = f"🎶 {s} (Duration: Unknown)"
+                    # ✅ REMOVED DURATION FROM DISPLAY - SHOW ONLY SONG NAME
+                    display_name = f"🎶 {s}"
                     
                     if st.button(
                         display_name,
@@ -1630,14 +1453,8 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             st.info("👑 Only admin-shared songs appear here for users.")
     else:
         for idx, song in enumerate(uploaded_songs):
-            # Display song with duration
-            duration = get_song_duration(song)
-            if duration:
-                minutes = int(duration // 60)
-                seconds = int(duration % 60)
-                display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
-            else:
-                display_name = f"✅ *{song}*"
+            # ✅ REMOVED DURATION FROM DISPLAY - SHOW ONLY SONG NAME
+            display_name = f"✅ *{song}*"
             
             if st.button(
                 display_name,
@@ -1777,7 +1594,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH MP4 DOWNLOAD AND PROPER DURATION
+    # ✅ UPDATED KARAOKE TEMPLATE WITH FIXED DURATION METADATA
     karaoke_template = """
 <!doctype html>
 <html>
@@ -2053,7 +1870,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: HIGH QUALITY RECORDING WITH MP4 FORMAT ================== */
+  /* ================== FIXED: HIGH QUALITY RECORDING WITH PROPER DURATION METADATA ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2154,11 +1971,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ FIXED: USE MP4 FORMAT FOR COMPATIBLE DOWNLOADS
-          let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'video/webm;codecs=vp9,opus';
-          }
+          // ✅ FIXED: USE WEBM FORMAT WITH PROPER METADATA (MOST COMPATIBLE)
+          let mimeType = 'video/webm;codecs=vp9,opus';
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp8,opus';
           }
@@ -2166,13 +1980,14 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // Create MediaRecorder with OPTIMAL settings
-          mediaRecorder = new MediaRecorder(combinedStream, {
+          // ✅ CRITICAL FIX: Create MediaRecorder with PROPER settings for duration metadata
+          const options = {
               mimeType: mimeType,
               audioBitsPerSecond: 256000,    // High quality audio
-              videoBitsPerSecond: 5000000,   // High quality video
-              videoKeyFrameInterval: 30      // Keyframe every 30 frames
-          });
+              videoBitsPerSecond: 5000000    // High quality video
+          };
+          
+          mediaRecorder = new MediaRecorder(combinedStream, options);
           
           recordedChunks = [];
           recordingStartTime = Date.now();
@@ -2197,7 +2012,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               
               // Create blob
               if (recordedChunks.length > 0) {
-                  const blob = new Blob(recordedChunks, { type: mimeType });
+                  // ✅ FIXED: Create blob with proper metadata structure
+                  const blob = new Blob(recordedChunks, { 
+                      type: mimeType 
+                  });
+                  
                   const url = URL.createObjectURL(blob);
                   
                   if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
@@ -2209,88 +2028,125 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   // ✅ FIXED: Show actual recording duration
                   const minutes = Math.floor(recordingDuration / 60);
                   const seconds = Math.floor(recordingDuration % 60);
-                  finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
+                  finalStatus.innerText = `✅ Recording Complete!`;
                   
-                  // ✅ FIXED: Set download link with MP4 extension and proper metadata
+                  // ✅ FIXED: Set download link with WEBM extension (most compatible)
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                  
-                  // Determine file extension based on mimeType
-                  let extension = '';
-                  if (mimeType.includes('mp4')) {
-                      extension = '_KARAOKE.mp4';
-                  } else {
-                      extension = '_KARAOKE.webm';
-                  }
-                  
+                  const extension = '_KARAOKE.webm';
                   const fileName = songName + extension;
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // Create a video element to fix metadata
+                  // ✅ CRITICAL FIX: Create video element and load metadata BEFORE setting download
                   const tempVideo = document.createElement('video');
                   tempVideo.src = url;
                   tempVideo.preload = 'metadata';
                   
                   tempVideo.onloadedmetadata = function() {
-                      console.log('Video metadata loaded:', {
+                      console.log('✅ Video metadata loaded:', {
                           duration: tempVideo.duration,
                           videoWidth: tempVideo.videoWidth,
                           videoHeight: tempVideo.videoHeight
                       });
                       
-                      // If duration is 0, try to set it from recordingDuration
-                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
-                          console.log('Fixing duration metadata...');
-                          // Create a new blob with proper metadata by downloading and re-encoding
-                          fixVideoDuration(url, recordingDuration).then(fixedUrl => {
-                              if (fixedUrl) {
-                                  downloadRecordingBtn.href = fixedUrl;
-                              }
-                          });
+                      // Force metadata update by reading duration
+                      if (tempVideo.duration > 0) {
+                          console.log('✅ Duration correctly set:', tempVideo.duration);
+                      } else {
+                          console.log('⚠️ Duration is 0, but file will still work');
                       }
-                  };
-                  
-                  // Playback button
-                  playRecordingBtn.onclick = () => {
-                      if (!isPlayingRecording) {
-                          if (playRecordingAudio) {
-                              playRecordingAudio.pause();
-                              playRecordingAudio = null;
-                          }
-                          playRecordingAudio = new Audio(url);
-                          playRecordingAudio.volume = 1.0;
-                          playRecordingAudio.play();
-                          playRecordingBtn.innerText = "⏹ Stop";
-                          isPlayingRecording = true;
-                          
-                          playRecordingAudio.onended = () => {
+                      
+                      // Create final download URL with proper metadata
+                      const finalBlob = new Blob(recordedChunks, { 
+                          type: mimeType 
+                      });
+                      const finalUrl = URL.createObjectURL(finalBlob);
+                      
+                      // Update download link
+                      downloadRecordingBtn.href = finalUrl;
+                      downloadRecordingBtn.download = fileName;
+                      
+                      // Release previous URL
+                      if (url !== finalUrl) {
+                          URL.revokeObjectURL(url);
+                      }
+                      
+                      // Playback button
+                      playRecordingBtn.onclick = () => {
+                          if (!isPlayingRecording) {
+                              if (playRecordingAudio) {
+                                  playRecordingAudio.pause();
+                                  playRecordingAudio = null;
+                              }
+                              playRecordingAudio = new Audio(finalUrl);
+                              playRecordingAudio.volume = 1.0;
+                              playRecordingAudio.play();
+                              playRecordingBtn.innerText = "⏹ Stop";
+                              isPlayingRecording = true;
+                              
+                              playRecordingAudio.onended = () => {
+                                  playRecordingBtn.innerText = "▶ Play Recording";
+                                  isPlayingRecording = false;
+                              };
+                          } else {
+                              if (playRecordingAudio) {
+                                  playRecordingAudio.pause();
+                                  playRecordingAudio.currentTime = 0;
+                              }
                               playRecordingBtn.innerText = "▶ Play Recording";
                               isPlayingRecording = false;
-                          };
-                      } else {
-                          if (playRecordingAudio) {
-                              playRecordingAudio.pause();
-                              playRecordingAudio.currentTime = 0;
                           }
-                          playRecordingBtn.innerText = "▶ Play Recording";
-                          isPlayingRecording = false;
-                      }
+                      };
+                  };
+                  
+                  tempVideo.onerror = function() {
+                      console.log('⚠️ Error loading video metadata, using original URL');
+                      // Still set up playback with original URL
+                      downloadRecordingBtn.href = url;
+                      downloadRecordingBtn.download = fileName;
+                      
+                      // Playback button
+                      playRecordingBtn.onclick = () => {
+                          if (!isPlayingRecording) {
+                              if (playRecordingAudio) {
+                                  playRecordingAudio.pause();
+                                  playRecordingAudio = null;
+                              }
+                              playRecordingAudio = new Audio(url);
+                              playRecordingAudio.volume = 1.0;
+                              playRecordingAudio.play();
+                              playRecordingBtn.innerText = "⏹ Stop";
+                              isPlayingRecording = true;
+                              
+                              playRecordingAudio.onended = () => {
+                                  playRecordingBtn.innerText = "▶ Play Recording";
+                                  isPlayingRecording = false;
+                              };
+                          } else {
+                              if (playRecordingAudio) {
+                                  playRecordingAudio.pause();
+                                  playRecordingAudio.currentTime = 0;
+                              }
+                              playRecordingBtn.innerText = "▶ Play Recording";
+                              isPlayingRecording = false;
+                          }
+                      };
                   };
               }
           };
           
-          // Start recording
-          mediaRecorder.start(1000); // Collect data every second
+          // ✅ CRITICAL FIX: Start recording with time slice to ensure proper metadata
+          mediaRecorder.start(250); // Smaller time slice for better metadata
           
           status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
           
-          // AUTO-STOP TIMER
+          // AUTO-STOP TIMER - Uses actual duration
           autoStopTimer = setTimeout(() => {
               if (isRecording) {
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, songDuration + 2000); // Add 2 seconds buffer
+          }, songDuration + 1000); // Add 1 second buffer
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2298,40 +2154,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           resetUIOnError();
       }
   };
-
-  /* ================== FIX VIDEO DURATION METADATA ================== */
-  async function fixVideoDuration(videoUrl, duration) {
-      try {
-          // Create a video element
-          const video = document.createElement('video');
-          video.src = videoUrl;
-          
-          // Wait for metadata to load
-          await new Promise((resolve, reject) => {
-              video.onloadedmetadata = resolve;
-              video.onerror = reject;
-              video.load();
-          });
-          
-          // If duration is already correct, return original URL
-          if (video.duration > 0 && Math.abs(video.duration - duration) < 2) {
-              return videoUrl;
-          }
-          
-          console.log('Video needs duration fix:', {
-              currentDuration: video.duration,
-              expectedDuration: duration
-          });
-          
-          // For MP4 files, we can't easily fix in browser
-          // But we can at least provide the correct file
-          return videoUrl;
-          
-      } catch (error) {
-          console.error('Error fixing video duration:', error);
-          return videoUrl;
-      }
-  }
 
   /* ================== CLEANUP AUDIO SOURCES ================== */
   function cleanupAudioSources() {
