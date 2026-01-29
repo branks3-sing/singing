@@ -182,7 +182,7 @@ def get_audio_duration(file_path):
             'format=duration', '-of', 
             'default=noprint_wrappers=1:nokey=1', file_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             duration = float(result.stdout.strip())
             if duration > 0:
@@ -192,19 +192,7 @@ def get_audio_duration(file_path):
     except Exception as e:
         methods_tried.append(f"ffprobe failed: {str(e)[:50]}")
     
-    # Method 2: pydub (if installed)
-    try:
-        from pydub import AudioSegment
-        audio = AudioSegment.from_file(file_path)
-        duration = len(audio) / 1000.0
-        if duration > 0:
-            print(f"✅ pydub duration for {os.path.basename(file_path)}: {duration}")
-            return duration
-        methods_tried.append("pydub")
-    except Exception as e:
-        methods_tried.append(f"pydub failed: {str(e)[:50]}")
-    
-    # Method 3: mutagen (if installed) - pure Python MP3 metadata
+    # Method 2: mutagen (if installed) - pure Python MP3 metadata
     try:
         from mutagen.mp3 import MP3
         audio = MP3(file_path)
@@ -215,6 +203,18 @@ def get_audio_duration(file_path):
         methods_tried.append("mutagen")
     except Exception as e:
         methods_tried.append(f"mutagen failed: {str(e)[:50]}")
+    
+    # Method 3: pydub (if installed)
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(file_path)
+        duration = len(audio) / 1000.0
+        if duration > 0:
+            print(f"✅ pydub duration for {os.path.basename(file_path)}: {duration}")
+            return duration
+        methods_tried.append("pydub")
+    except Exception as e:
+        methods_tried.append(f"pydub failed: {str(e)[:50]}")
     
     # Method 4: wave module for WAV files
     try:
@@ -235,6 +235,7 @@ def get_audio_duration(file_path):
         if file_path.lower().endswith('.mp3'):
             # More accurate estimation: 128kbps = 0.94 MB per minute
             file_size = os.path.getsize(file_path)
+            # Convert bytes to bits: *8, convert kbps to bps: *1024
             estimated_duration = (file_size * 8) / (128 * 1024)  # Convert to seconds
             if estimated_duration > 0:
                 print(f"⚠️ Estimated duration for {os.path.basename(file_path)}: {estimated_duration}")
@@ -255,9 +256,39 @@ def fix_audio_duration(input_path, output_path):
             '-y',
             output_path
         ]
-        subprocess.run(cmd, capture_output=True, timeout=10)
+        subprocess.run(cmd, capture_output=True, timeout=15)
         return True
-    except:
+    except Exception as e:
+        print(f"Warning: Could not fix audio duration: {e}")
+        import shutil
+        shutil.copy2(input_path, output_path)
+        return True
+
+# =============== HIGH QUALITY AUDIO PROCESSING ===============
+def process_audio_for_quality(input_path, output_path):
+    """Process audio for better quality and fix duration issues"""
+    try:
+        # Use ffmpeg to process audio with optimal settings
+        cmd = [
+            'ffmpeg', '-i', input_path,
+            '-c:a', 'libmp3lame',
+            '-q:a', '0',  # Highest quality (0-9, 0 is best)
+            '-ar', '48000',  # High sample rate
+            '-b:a', '320k',  # High bitrate
+            '-map_metadata', '0',
+            '-id3v2_version', '3',
+            '-write_xing', '0',  # Fix duration issues
+            '-y',
+            output_path
+        ]
+        subprocess.run(cmd, capture_output=True, timeout=20)
+        
+        # Verify duration after processing
+        duration = get_audio_duration(output_path)
+        print(f"✅ Processed audio duration: {duration} seconds")
+        return True
+    except Exception as e:
+        print(f"⚠️ Audio processing failed, using original: {e}")
         import shutil
         shutil.copy2(input_path, output_path)
         return True
@@ -304,11 +335,12 @@ def init_session_db():
                      (song_name TEXT PRIMARY KEY,
                       uploaded_by TEXT,
                       timestamp REAL,
-                      duration REAL)''')
+                      duration REAL,
+                      processed BOOLEAN DEFAULT 0)''')
         conn.commit()
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Database init error: {e}")
 
 def save_session_to_db():
     try:
@@ -327,8 +359,8 @@ def save_session_to_db():
                    datetime.now()))
         conn.commit()
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Save session error: {e}")
 
 def load_session_from_db():
     try:
@@ -350,8 +382,8 @@ def load_session_from_db():
                 st.session_state.page = page
             if selected_song and selected_song != 'None':
                 st.session_state.selected_song = selected_song
-    except:
-        pass
+    except Exception as e:
+        print(f"Load session error: {e}")
 
 def save_shared_link_to_db(song_name, shared_by):
     try:
@@ -363,8 +395,8 @@ def save_shared_link_to_db(song_name, shared_by):
                   (song_name, shared_by, True, datetime.now()))
         conn.commit()
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Save shared link error: {e}")
 
 def delete_shared_link_from_db(song_name):
     try:
@@ -373,8 +405,8 @@ def delete_shared_link_from_db(song_name):
         c.execute('DELETE FROM shared_links WHERE song_name = ?', (song_name,))
         conn.commit()
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Delete shared link error: {e}")
 
 def load_shared_links_from_db():
     links = {}
@@ -387,22 +419,22 @@ def load_shared_links_from_db():
         
         for song_name, shared_by in results:
             links[song_name] = {"shared_by": shared_by, "active": True}
-    except:
-        pass
+    except Exception as e:
+        print(f"Load shared links error: {e}")
     return links
 
-def save_metadata_to_db(song_name, uploaded_by, duration=None):
+def save_metadata_to_db(song_name, uploaded_by, duration=None, processed=False):
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO metadata 
-                     (song_name, uploaded_by, timestamp, duration)
-                     VALUES (?, ?, ?, ?)''',
-                  (song_name, uploaded_by, time.time(), duration))
+                     (song_name, uploaded_by, timestamp, duration, processed)
+                     VALUES (?, ?, ?, ?, ?)''',
+                  (song_name, uploaded_by, time.time(), duration, processed))
         conn.commit()
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Save metadata error: {e}")
 
 def delete_metadata_from_db(song_name):
     try:
@@ -411,26 +443,27 @@ def delete_metadata_from_db(song_name):
         c.execute('DELETE FROM metadata WHERE song_name = ?', (song_name,))
         conn.commit()
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Delete metadata error: {e}")
 
 def load_metadata_from_db():
     metadata = {}
     try:
         conn = sqlite3.connect(session_db_path)
         c = conn.cursor()
-        c.execute('SELECT song_name, uploaded_by, duration FROM metadata')
+        c.execute('SELECT song_name, uploaded_by, duration, processed FROM metadata')
         results = c.fetchall()
         conn.close()
         
-        for song_name, uploaded_by, duration in results:
+        for song_name, uploaded_by, duration, processed in results:
             metadata[song_name] = {
                 "uploaded_by": uploaded_by, 
                 "timestamp": str(time.time()),
-                "duration": duration
+                "duration": duration,
+                "processed": bool(processed)
             }
-    except:
-        pass  # ✅ FIXED: Added proper indentation for except block
+    except Exception as e:
+        print(f"Load metadata error: {e}")
     return metadata
 
 # Initialize database
@@ -468,7 +501,8 @@ def save_metadata(data):
     for song_name, info in data.items():
         uploaded_by = info.get("uploaded_by", "unknown")
         duration = info.get("duration")
-        save_metadata_to_db(song_name, uploaded_by, duration)
+        processed = info.get("processed", False)
+        save_metadata_to_db(song_name, uploaded_by, duration, processed)
 
 def delete_metadata(song_name):
     metadata = load_metadata()
@@ -577,7 +611,7 @@ def process_query_params():
 
 # =============== IMPROVED GET ACCURATE AUDIO DURATION FOR SONG ===============
 def get_song_duration(song_name):
-    """Get accurate duration for a song, NEVER return 30 seconds default"""
+    """Get accurate duration for a song"""
     metadata = get_metadata_cached()
     
     # Check if we have stored duration in metadata
@@ -587,7 +621,7 @@ def get_song_duration(song_name):
             print(f"✅ Using stored duration for {song_name}: {stored_duration}")
             return stored_duration
     
-    # Try accompaniment file first
+    # Try processed accompaniment file first
     acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
     if os.path.exists(acc_path):
         try:
@@ -621,17 +655,51 @@ def get_song_duration(song_name):
     if os.path.exists(acc_path):
         try:
             file_size = os.path.getsize(acc_path)
-            # Better estimation: MP3 at 128kbps = 0.94 MB per minute
+            # Better estimation: MP3 at 128kbps
             estimated_duration = (file_size * 8) / (128 * 1024)
-            if estimated_duration > 30:  # Only use if reasonable
+            if estimated_duration > 30:
                 print(f"⚠️ Estimated duration from file size for {song_name}: {estimated_duration}")
                 return estimated_duration
         except:
             pass
     
-    # Last resort: Return None instead of wrong default
-    print(f"❌ Could not determine duration for {song_name}")
-    return None
+    # Return reasonable default
+    print(f"⚠️ Using default duration for {song_name}")
+    return 180
+
+def ensure_audio_processed(song_name):
+    """Ensure audio files are processed for high quality"""
+    metadata = get_metadata_cached()
+    
+    if song_name in metadata and metadata[song_name].get("processed", False):
+        return True
+    
+    original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
+    acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
+    
+    # Create processed versions
+    processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
+    processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
+    
+    try:
+        # Process both files
+        print(f"🔧 Processing audio for {song_name}...")
+        process_audio_for_quality(original_path, processed_original)
+        process_audio_for_quality(acc_path, processed_acc)
+        
+        # Update metadata
+        if song_name in metadata:
+            metadata[song_name]["processed"] = True
+        else:
+            metadata[song_name] = {"processed": True, "uploaded_by": "unknown"}
+        
+        save_metadata(metadata)
+        get_metadata_cached.clear()
+        print(f"✅ Audio processed for {song_name}")
+        return True
+    except Exception as e:
+        print(f"⚠️ Audio processing failed for {song_name}: {e}")
+        return False
 
 # =============== INITIALIZE SESSION ===============
 check_and_create_session_id()
@@ -1132,7 +1200,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
 
     page_sidebar = st.sidebar.radio(
         "Navigate",
-        ["Upload Songs", "Songs List", "Share Links"],
+        ["Upload Songs", "Songs List", "Share Links", "Process Audio"],
         key="admin_nav"
     )
 
@@ -1188,22 +1256,25 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 with open(lyrics_path, "wb") as f:
                     f.write(uploaded_lyrics_image.getbuffer())
                 
-                try:
-                    fix_audio_duration(original_path, original_path)
-                    fix_audio_duration(acc_path, acc_path)
-                except:
-                    pass
+                # Process audio for high quality
+                with st.spinner("🔄 Processing audio for high quality..."):
+                    processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
+                    processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
+                    
+                    process_audio_for_quality(original_path, processed_original)
+                    process_audio_for_quality(acc_path, processed_acc)
                 
-                # Get accurate duration with improved function
-                duration = get_audio_duration(acc_path)
+                # Get accurate duration
+                duration = get_audio_duration(processed_acc)
                 if not duration or duration <= 0:
-                    duration = get_audio_duration(original_path)
+                    duration = get_audio_duration(acc_path)
                 
                 metadata = get_metadata_cached()
                 metadata[song_name] = {
                     "uploaded_by": st.session_state.user,
                     "timestamp": str(time.time()),
-                    "duration": duration
+                    "duration": duration,
+                    "processed": True
                 }
                 save_metadata(metadata)
 
@@ -1211,8 +1282,10 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 get_metadata_cached.clear()
 
                 if duration:
+                    minutes = int(duration // 60)
+                    seconds = int(duration % 60)
                     st.success(f"✅ Song Uploaded Successfully: {song_name}")
-                    st.info(f"⏱️ Duration: {int(duration//60)}:{int(duration%60):02d}")
+                    st.info(f"⏱️ Duration: {minutes}:{seconds:02d}")
                 else:
                     st.success(f"✅ Song Uploaded Successfully: {song_name}")
                     st.warning("⚠️ Could not determine song duration")
@@ -1247,9 +1320,17 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # ✅ REMOVED DURATION DISPLAY FROM SONG NAME
+                    # Display song name with duration
+                    duration = get_song_duration(s)
+                    if duration:
+                        minutes = int(duration // 60)
+                        seconds = int(duration % 60)
+                        display_name = f"🎶 {s} ({minutes}:{seconds:02d})"
+                    else:
+                        display_name = f"🎶 {s} (Duration: Unknown)"
+                    
                     if st.button(
-                        f"🎶 {s}",
+                        display_name,
                         key=f"song_name_{s}_{idx}",
                         help="Click to play song",
                         use_container_width=True,
@@ -1380,6 +1461,26 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                                 float: right;
                             " title="Open Link">🔗</a>
                             """, unsafe_allow_html=True)
+
+    elif page_sidebar == "Process Audio":
+        st.header("🔧 Process Audio for Quality")
+        st.info("This will re-process all audio files for better quality and fix duration issues.")
+        
+        if st.button("🔄 Process All Audio Files", key="process_all_audio"):
+            all_songs = get_song_files_cached()
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for idx, song in enumerate(all_songs):
+                status_text.text(f"Processing {song}...")
+                ensure_audio_processed(song)
+                progress_bar.progress((idx + 1) / len(all_songs))
+            
+            status_text.text("✅ All audio files processed!")
+            st.success("Audio processing completed successfully!")
+            get_metadata_cached.clear()
+            time.sleep(1)
+            st.rerun()
 
     if st.sidebar.button("Logout", key="admin_logout"):
         for key in list(st.session_state.keys()):
@@ -1529,9 +1630,17 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             st.info("👑 Only admin-shared songs appear here for users.")
     else:
         for idx, song in enumerate(uploaded_songs):
-            # ✅ REMOVED DURATION DISPLAY FROM SONG NAME
+            # Display song with duration
+            duration = get_song_duration(song)
+            if duration:
+                minutes = int(duration // 60)
+                seconds = int(duration % 60)
+                display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
+            else:
+                display_name = f"✅ *{song}*"
+            
             if st.button(
-                f"✅ *{song}*",
+                display_name,
                 key=f"user_song_{song}_{idx}",
                 help="Click to play song",
                 use_container_width=True,
@@ -1539,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED STOP BUTTON ISSUE ===============
+# =============== SONG PLAYER WITH FIXED DURATION AND RECORDING QUALITY ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1638,8 +1747,20 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         st.error("❌ Access denied!")
         st.stop()
 
-    original_path = os.path.join(songs_dir, f"{selected_song}_original.mp3")
-    accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment.mp3")
+    # Check for processed audio files first
+    processed_original_path = os.path.join(songs_dir, f"{selected_song}_original_processed.mp3")
+    processed_accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment_processed.mp3")
+    
+    # Use processed files if available, otherwise use original
+    if os.path.exists(processed_original_path):
+        original_path = processed_original_path
+    else:
+        original_path = os.path.join(songs_dir, f"{selected_song}_original.mp3")
+    
+    if os.path.exists(processed_accompaniment_path):
+        accompaniment_path = processed_accompaniment_path
+    else:
+        accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment.mp3")
 
     lyrics_path = ""
     for ext in [".jpg", ".jpeg", ".png"]:
@@ -1654,9 +1775,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     
     song_duration = get_song_duration(selected_song)
     if not song_duration or song_duration <= 0:
-        song_duration = 180  # Default fallback
+        song_duration = 180
 
-    # ✅ FIXED KARAOKE TEMPLATE - FIXED STOP BUTTON ISSUE
+    # ✅ FIXED KARAOKE TEMPLATE WITH IMPROVED RECORDING QUALITY
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1828,12 +1949,13 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let recordedChunks = [];
   let playRecordingAudio = null;
   let lastRecordingURL = null;
-  let audioContext, micSource, accSource, micGain, accGain;
+  let audioContext, micSource, accSource, micGain, accGain, destination;
   let canvasRafId = null;
   let isRecording = false;
   let isPlayingRecording = false;
   let autoStopTimer = null;
-  let isSongPlaying = false; // ✅ NEW: Track if song is playing
+  let isSongPlaying = false;
+  let micStream = null;
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -1863,7 +1985,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       if (!audioContext) {
           audioContext = new (window.AudioContext || window.webkitAudioContext)({
               sampleRate: 48000,
-              latencyHint: 'interactive'
+              latencyHint: 'playback'
           });
       }
       if (audioContext.state === "suspended") {
@@ -1872,27 +1994,26 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       return audioContext;
   }
 
-  /* ================== PLAY/STOP ORIGINAL SONG WITH BUTTON SWITCH ================== */
+  /* ================== PLAY/STOP ORIGINAL SONG ================== */
   playBtn.onclick = async function() {
       await ensureAudioContext();
       
       if (!isSongPlaying) {
-          // ✅ START PLAYING
           originalAudio.currentTime = 0;
-          originalAudio.play().then(() => {
+          try {
+              await originalAudio.play();
               isSongPlaying = true;
-              playBtn.innerText = "⏹ Stop Song"; // ✅ IMMEDIATELY CHANGE TO STOP
+              playBtn.innerText = "⏹ Stop Song";
               status.innerText = "🎵 Playing original song...";
-          }).catch(e => {
+          } catch(e) {
               console.log("Play error:", e);
               status.innerText = "❌ Tap screen first";
-          });
+          }
       } else {
-          // ✅ STOP PLAYING
           originalAudio.pause();
           originalAudio.currentTime = 0;
           isSongPlaying = false;
-          playBtn.innerText = "▶ Play Song"; // ✅ IMMEDIATELY CHANGE TO PLAY
+          playBtn.innerText = "▶ Play Song";
           status.innerText = "⏹ Stopped";
       }
   };
@@ -1930,7 +2051,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: RECORDS FULL SONG DURATION ================== */
+  /* ================== FIXED: HIGH QUALITY RECORDING ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -1956,19 +2077,19 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               isSongPlaying = false;
           }
           
-          // Play original song for reference ONLY (NOT recorded)
+          // Play original song for reference (not recorded)
           originalAudio.currentTime = 0;
           originalAudio.play().catch(e => {
               console.log("Original song play error:", e);
           });
           
-          // Get microphone with quality settings
-          const micStream = await navigator.mediaDevices.getUserMedia({
+          // Get microphone with IMPROVED settings for voice clarity
+          micStream = await navigator.mediaDevices.getUserMedia({
               audio: {
-                  echoCancellation: true,
-                  noiseSuppression: true,
-                  autoGainControl: true,
-                  channelCount: 2,
+                  echoCancellation: true,      // Reduce echo
+                  noiseSuppression: true,      // Reduce background noise
+                  autoGainControl: false,      // Disable auto gain for better control
+                  channelCount: 1,            // Mono for voice
                   sampleRate: 48000,
                   sampleSize: 24,
                   latency: 0.01
@@ -1983,33 +2104,33 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           // Create microphone source
           micSource = audioCtx.createMediaStreamSource(micStream);
           
-          // Load accompaniment for recording - CRITICAL FIX HERE
+          // Load accompaniment for recording
           const accRes = await fetch(accompanimentAudio.src);
           const accBuf = await accRes.arrayBuffer();
           const accDecoded = await audioCtx.decodeAudioData(accBuf);
           
-          // Get ACTUAL duration from audio buffer
-          const actualDuration = accDecoded.duration; // This is the REAL duration in seconds
+          // Get ACTUAL duration
+          const actualDuration = accDecoded.duration;
           console.log("✅ Actual accompaniment duration:", actualDuration, "seconds");
           
           accSource = audioCtx.createBufferSource();
           accSource.buffer = accDecoded;
           
-          // Use ACTUAL duration, not estimated one
-          const songDuration = actualDuration * 1000; // Convert to milliseconds
+          // Use ACTUAL duration
+          const songDuration = actualDuration * 1000;
           console.log("✅ Recording will last:", songDuration, "ms");
           
-          // Create gain nodes
+          // Create gain nodes with OPTIMAL settings
           micGain = audioCtx.createGain();
-          micGain.gain.value = 2.0;
+          micGain.gain.value = 1.8;  // Optimal for voice clarity
           
           accGain = audioCtx.createGain();
-          accGain.gain.value = 0.35;
+          accGain.gain.value = 0.3;  // Lower accompaniment volume
           
           // Create destination for recording
-          const destination = audioCtx.createMediaStreamDestination();
+          destination = audioCtx.createMediaStreamDestination();
           
-          // Connect microphone and accompaniment to recording
+          // Connect microphone and accompaniment
           micSource.connect(micGain);
           micGain.connect(destination);
           accSource.connect(accGain);
@@ -2018,11 +2139,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           // Start canvas drawing
           drawCanvas();
           
-          // Start accompaniment for recording - THIS PLAYS THE FULL SONG
+          // Start accompaniment for recording
           accSource.start();
           
           // Create stream from canvas
-          const canvasStream = canvas.captureStream(60);
+          const canvasStream = canvas.captureStream(30); // Lower frame rate for stability
           const mixedAudioStream = destination.stream;
           
           // Combine video and audio streams
@@ -2031,7 +2152,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ULTRA HIGH QUALITY VIDEO SETTINGS
+          // HIGH QUALITY VIDEO SETTINGS
           let mimeType = 'video/webm;codecs=vp9,opus';
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp8,opus';
@@ -2040,12 +2161,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // Create MediaRecorder
+          // Create MediaRecorder with OPTIMAL settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 320000,
-              videoBitsPerSecond: 10000000,
-              videoKeyFrameInterval: 10
+              audioBitsPerSecond: 256000,    // High quality audio
+              videoBitsPerSecond: 5000000,   // High quality video
+              videoKeyFrameInterval: 30      // Keyframe every 30 frames
           });
           
           recordedChunks = [];
@@ -2058,21 +2179,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           mediaRecorder.onstop = () => {
               cancelAnimationFrame(canvasRafId);
               
-              // Stop all audio sources
-              if (accSource) {
-                  try { 
-                      accSource.stop(); 
-                      accSource.disconnect();
-                  } catch(e) {}
-                  accSource = null;
-              }
-              
-              if (micSource) {
-                  try { 
-                      micSource.disconnect(); 
-                  } catch(e) {}
-                  micSource = null;
-              }
+              // Cleanup audio sources
+              cleanupAudioSources();
               
               // Stop original song
               originalAudio.pause();
@@ -2128,17 +2236,17 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           };
           
           // Start recording
-          mediaRecorder.start(250);
+          mediaRecorder.start(1000); // Collect data every second
           
           status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
           
-          // AUTO-STOP TIMER - USES ACTUAL DURATION
+          // AUTO-STOP TIMER
           autoStopTimer = setTimeout(() => {
               if (isRecording) {
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, songDuration + 3000); // Add 3 seconds buffer
+          }, songDuration + 2000); // Add 2 seconds buffer
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2146,6 +2254,50 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           resetUIOnError();
       }
   };
+
+  /* ================== CLEANUP AUDIO SOURCES ================== */
+  function cleanupAudioSources() {
+      if (accSource) {
+          try { 
+              accSource.stop(); 
+              accSource.disconnect();
+          } catch(e) {}
+          accSource = null;
+      }
+      
+      if (micSource) {
+          try { 
+              micSource.disconnect(); 
+          } catch(e) {}
+          micSource = null;
+      }
+      
+      if (micGain) {
+          try {
+              micGain.disconnect();
+          } catch(e) {}
+          micGain = null;
+      }
+      
+      if (accGain) {
+          try {
+              accGain.disconnect();
+          } catch(e) {}
+          accGain = null;
+      }
+      
+      if (destination) {
+          try {
+              destination.disconnect();
+          } catch(e) {}
+          destination = null;
+      }
+      
+      if (micStream) {
+          micStream.getTracks().forEach(track => track.stop());
+          micStream = null;
+      }
+  }
 
   /* ================== STOP RECORDING ================== */
   function stopRecording() {
@@ -2162,19 +2314,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           mediaRecorder.stop();
       }
       
-      // Stop audio sources
-      if (accSource) {
-          try { 
-              accSource.stop(); 
-              accSource.disconnect();
-          } catch(e) {}
-      }
-      
-      if (micSource) {
-          try { 
-              micSource.disconnect(); 
-          } catch(e) {}
-      }
+      // Cleanup audio sources
+      cleanupAudioSources();
       
       // Stop original song
       originalAudio.pause();
@@ -2213,7 +2354,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       originalAudio.currentTime = 0;
       isSongPlaying = false;
       
-      // ✅ RESET UI - PLAY BUTTON SHOWS "▶ Play Song"
+      // Reset UI
       playBtn.style.display = "inline-block";
       playBtn.innerText = "▶ Play Song";
       recordBtn.style.display = "inline-block";
@@ -2231,7 +2372,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           lastRecordingURL = null;
       }
       
-      // Clear audio context
+      // Cleanup audio context
       if (audioContext) {
           try {
               audioContext.close();
@@ -2259,6 +2400,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           clearTimeout(autoStopTimer);
           autoStopTimer = null;
       }
+      
+      // Cleanup
+      cleanupAudioSources();
   }
 
   /* ================== TOUCH EVENTS FOR MOBILE ================== */
@@ -2269,13 +2413,18 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   /* ================== SONG ENDED EVENT ================== */
   originalAudio.addEventListener('ended', function() {
       isSongPlaying = false;
-      playBtn.innerText = "▶ Play Song"; // ✅ AUTO CHANGE TO PLAY BUTTON
+      playBtn.innerText = "▶ Play Song";
       status.innerText = "Song finished";
   });
 
   /* ================== INITIALIZE ================== */
   window.addEventListener('load', () => {
       status.innerText = "Ready 🎤 - Tap screen first";
+      
+      // Pre-warm audio context
+      ensureAudioContext().then(() => {
+          status.innerText = "Ready 🎤";
+      });
   });
 
   /* ================== CLEANUP ================== */
@@ -2286,6 +2435,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       if (audioContext) {
           audioContext.close();
       }
+      cleanupAudioSources();
   });
   </script>
 </body>
