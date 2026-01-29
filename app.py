@@ -1648,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED DURATION AND RECORDING QUALITY ===============
+# =============== SONG PLAYER WITH FIXED DURATION AND MP4 DOWNLOAD ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1777,7 +1777,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ FIXED KARAOKE TEMPLATE WITH IMPROVED RECORDING QUALITY
+    # ✅ FIXED KARAOKE TEMPLATE WITH PROPER DURATION AND MP4 DOWNLOAD
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1956,6 +1956,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let autoStopTimer = null;
   let isSongPlaying = false;
   let micStream = null;
+  let recordingStartTime = 0;
+  let recordingDuration = 0;
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -2051,7 +2053,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: HIGH QUALITY RECORDING ================== */
+  /* ================== FIXED: HIGH QUALITY RECORDING WITH PROPER DURATION ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2116,9 +2118,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accSource = audioCtx.createBufferSource();
           accSource.buffer = accDecoded;
           
-          // Use ACTUAL duration
-          const songDuration = actualDuration * 1000;
-          console.log("✅ Recording will last:", songDuration, "ms");
+          // Store recording duration
+          recordingDuration = actualDuration * 1000; // Convert to milliseconds
+          recordingStartTime = Date.now();
+          
+          console.log("✅ Recording will last:", recordingDuration, "ms");
           
           // Create gain nodes with OPTIMAL settings
           micGain = audioCtx.createGain();
@@ -2152,13 +2156,33 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // HIGH QUALITY VIDEO SETTINGS
-          let mimeType = 'video/webm;codecs=vp9,opus';
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'video/webm;codecs=vp8,opus';
+          // ✅ FIXED: USE MP4 FORMAT FOR BETTER COMPATIBILITY
+          let mimeType = '';
+          const mp4Types = [
+              'video/mp4;codecs=h264,opus',
+              'video/mp4;codecs=avc1,opus',
+              'video/mp4'
+          ];
+          
+          // Try MP4 formats first
+          for (const type of mp4Types) {
+              if (MediaRecorder.isTypeSupported(type)) {
+                  mimeType = type;
+                  console.log("✅ Using MP4 format:", type);
+                  break;
+              }
           }
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'video/webm';
+          
+          // Fallback to WEBM if MP4 not supported
+          if (!mimeType) {
+              mimeType = 'video/webm;codecs=vp9,opus';
+              if (!MediaRecorder.isTypeSupported(mimeType)) {
+                  mimeType = 'video/webm;codecs=vp8,opus';
+              }
+              if (!MediaRecorder.isTypeSupported(mimeType)) {
+                  mimeType = 'video/webm';
+              }
+              console.log("⚠️ MP4 not supported, using WEBM:", mimeType);
           }
           
           // Create MediaRecorder with OPTIMAL settings
@@ -2179,6 +2203,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           mediaRecorder.onstop = () => {
               cancelAnimationFrame(canvasRafId);
               
+              // Calculate actual recording duration
+              const actualRecordingDuration = (Date.now() - recordingStartTime) / 1000;
+              console.log("✅ Actual recording duration:", actualRecordingDuration.toFixed(2), "seconds");
+              
               // Cleanup audio sources
               cleanupAudioSources();
               
@@ -2187,7 +2215,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               originalAudio.currentTime = 0;
               isSongPlaying = false;
               
-              // Create blob
+              // Create blob with proper MIME type
               if (recordedChunks.length > 0) {
                   const blob = new Blob(recordedChunks, { type: mimeType });
                   const url = URL.createObjectURL(blob);
@@ -2197,12 +2225,15 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   
                   finalBg.src = mainBg.src;
                   finalDiv.style.display = "flex";
-                  finalStatus.innerText = "✅ Recording Complete!";
+                  finalStatus.innerText = `✅ Recording Complete! (${formatDuration(actualRecordingDuration)})`;
                   
-                  // Set download link
+                  // Set download link with MP4 extension if MP4 format
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                  const extension = '_KARAOKE.webm';
+                  const isMp4 = mimeType.includes('mp4');
+                  const extension = isMp4 ? '_KARAOKE.mp4' : '_KARAOKE.webm';
                   const fileName = songName + extension;
+                  
+                  // Create download link
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
@@ -2240,13 +2271,13 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           
           status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
           
-          // AUTO-STOP TIMER
+          // AUTO-STOP TIMER - Use actual song duration
           autoStopTimer = setTimeout(() => {
               if (isRecording) {
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, songDuration + 2000); // Add 2 seconds buffer
+          }, recordingDuration + 2000); // Add 2 seconds buffer
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2254,6 +2285,13 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           resetUIOnError();
       }
   };
+
+  /* ================== FORMAT DURATION FUNCTION ================== */
+  function formatDuration(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
 
   /* ================== CLEANUP AUDIO SOURCES ================== */
   function cleanupAudioSources() {
@@ -2365,6 +2403,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       recordedChunks = [];
       isRecording = false;
       isPlayingRecording = false;
+      recordingStartTime = 0;
+      recordingDuration = 0;
       
       // Release URL
       if (lastRecordingURL) {
@@ -2395,6 +2435,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       // Stop original song
       originalAudio.pause();
       originalAudio.currentTime = 0;
+      
+      // Reset recording timing
+      recordingStartTime = 0;
+      recordingDuration = 0;
       
       if (autoStopTimer) {
           clearTimeout(autoStopTimer);
