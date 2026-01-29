@@ -1320,12 +1320,12 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # Display song name with duration
+                    # Display song name 
                     duration = get_song_duration(s)
                     if duration:
                         minutes = int(duration // 60)
                         seconds = int(duration % 60)
-                        display_name = f"🎶 {s} ({minutes}:{seconds:02d})"
+                        display_name = f"✅ *{song}*"
                     else:
                         display_name = f"🎶 {s} (Duration: Unknown)"
                     
@@ -1635,7 +1635,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             if duration:
                 minutes = int(duration // 60)
                 seconds = int(duration % 60)
-                display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
+                display_name = f"✅ *{song}*"
             else:
                 display_name = f"✅ *{song}*"
             
