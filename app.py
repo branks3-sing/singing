@@ -815,7 +815,7 @@ if st.session_state.page == "Login":
         st.markdown(f"""
         <div class="login-header">
             <img src="data:image/png;base64,{logo_b64}" onerror="this.style.display='none'">
-            <div class="login-title">𝄞 Sing Along</div>
+            <div class="login-title">Sing Along</div>
             <div class="login-sub">Login to continue</div>
         </div>
         """, unsafe_allow_html=True)
