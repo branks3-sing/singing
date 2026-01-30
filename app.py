@@ -679,7 +679,7 @@ def ensure_audio_processed(song_name):
     
     # Create processed versions
     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
-    processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
+    processed_acc = os.path.join(songs_dir, f"{song_name}_accompanment_processed.mp3")
     
     try:
         # Process both files
@@ -1648,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED DURATION AND MP4 DOWNLOAD ===============
+# =============== SONG PLAYER WITH FIXED VOICE RECORDING CLARITY ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1777,7 +1777,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH IMPROVED VOICE CLARITY SETTINGS
+    # ✅ UPDATED KARAOKE TEMPLATE WITH IMPROVED VOICE RECORDING CLARITY
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1958,6 +1958,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let micStream = null;
   let recordingStartTime = 0;
   let recordingDuration = 0;
+  let compressor = null;
+  let highPassFilter = null;
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -2053,7 +2055,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== IMPROVED VOICE RECORDING WITH CLEAR AUDIO ================== */
+  /* ================== FIXED: IMPROVED VOICE RECORDING CLARITY ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2085,17 +2087,16 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               console.log("Original song play error:", e);
           });
           
-          // IMPROVED: Get microphone with optimized settings for CLEAR VOICE
+          // ✅ IMPROVED MICROPHONE SETTINGS FOR CLEAR VOICE RECORDING
           micStream = await navigator.mediaDevices.getUserMedia({
               audio: {
-                  echoCancellation: true,           // Reduce echo
-                  noiseSuppression: true,           // Reduce background noise
-                  autoGainControl: false,           // Disable auto gain for better control
-                  channelCount: 1,                  // Mono for voice
-                  sampleRate: 48000,               // High sample rate for clarity
-                  sampleSize: 24,                  // 24-bit for better quality
-                  latency: 0.01,                   // Low latency
-                  volume: 1.0                      // Full volume
+                  echoCancellation: false,       // Turn off for better voice quality
+                  noiseSuppression: false,       // Turn off to prevent voice distortion
+                  autoGainControl: false,        // Turn off for consistent volume
+                  channelCount: 1,               // Mono for voice clarity
+                  sampleRate: 48000,            // High sample rate
+                  sampleSize: 16,               // 16-bit for clarity
+                  latency: 0                     // Low latency
               },
               video: false
           }).catch(err => {
@@ -2119,33 +2120,40 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accSource = audioCtx.createBufferSource();
           accSource.buffer = accDecoded;
           
-          // Use ACTUAL duration
-          const songDuration = actualDuration * 1000;
-          console.log("✅ Recording will last:", songDuration, "ms");
+          // ✅ IMPROVED AUDIO PROCESSING FOR VOICE CLARITY
           
-          // IMPROVED: Create gain nodes with OPTIMIZED settings for CLEAR VOICE
+          // 1. Create high-pass filter to remove low-frequency rumble (50Hz)
+          highPassFilter = audioCtx.createBiquadFilter();
+          highPassFilter.type = "highpass";
+          highPassFilter.frequency.setValueAtTime(80, audioCtx.currentTime);
+          highPassFilter.Q.setValueAtTime(0.707, audioCtx.currentTime);
+          
+          // 2. Create compressor for consistent voice volume
+          compressor = audioCtx.createDynamicsCompressor();
+          compressor.threshold.setValueAtTime(-20, audioCtx.currentTime); // Louder threshold
+          compressor.knee.setValueAtTime(30, audioCtx.currentTime);       // Smooth knee
+          compressor.ratio.setValueAtTime(4, audioCtx.currentTime);       // Moderate compression
+          compressor.attack.setValueAtTime(0.01, audioCtx.currentTime);   // Fast attack
+          compressor.release.setValueAtTime(0.15, audioCtx.currentTime);  // Medium release
+          
+          // 3. Create gain nodes with optimized settings
           micGain = audioCtx.createGain();
-          micGain.gain.value = 1.8;  // Optimal for voice clarity without distortion
-          
-          // Create a dynamics compressor to prevent clipping and improve voice quality
-          const compressor = audioCtx.createDynamicsCompressor();
-          compressor.threshold.value = -20;     // -20 dB threshold
-          compressor.knee.value = 10;          // 10 dB knee width
-          compressor.ratio.value = 4;          // 4:1 ratio
-          compressor.attack.value = 0.003;     // Fast attack (3ms)
-          compressor.release.value = 0.050;    // Medium release (50ms)
+          micGain.gain.setValueAtTime(1.5, audioCtx.currentTime);  // Good starting gain
           
           accGain = audioCtx.createGain();
-          accGain.gain.value = 0.25;  // Lower accompaniment volume so voice stands out
+          accGain.gain.setValueAtTime(0.15, audioCtx.currentTime); // Lower accompaniment for clear voice
           
           // Create destination for recording
           destination = audioCtx.createMediaStreamDestination();
           
-          // IMPROVED: Connect with compressor for better voice quality
+          // ✅ IMPROVED AUDIO CONNECTION CHAIN FOR CLEAR VOICE
+          // Microphone chain: Source → Gain → HighPass → Compressor → Destination
           micSource.connect(micGain);
-          micGain.connect(compressor);
+          micGain.connect(highPassFilter);
+          highPassFilter.connect(compressor);
           compressor.connect(destination);
           
+          // Accompaniment: Source → Gain → Destination
           accSource.connect(accGain);
           accGain.connect(destination);
           
@@ -2156,7 +2164,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accSource.start();
           
           // Create stream from canvas
-          const canvasStream = canvas.captureStream(30); // Lower frame rate for stability
+          const canvasStream = canvas.captureStream(30);
           const mixedAudioStream = destination.stream;
           
           // Combine video and audio streams
@@ -2165,11 +2173,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ FIXED: USE MP4 FORMAT FOR COMPATIBLE DOWNLOADS
-          let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'video/webm;codecs=vp9,opus';
-          }
+          // ✅ IMPROVED MEDIA RECORDER SETTINGS
+          let mimeType = 'video/webm;codecs=vp9,opus';  // Better audio codec
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp8,opus';
           }
@@ -2177,12 +2182,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // Create MediaRecorder with HIGH QUALITY settings
+          // Create MediaRecorder with HIGH QUALITY audio settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 256000,    // High quality audio
-              videoBitsPerSecond: 5000000,   // High quality video
-              videoKeyFrameInterval: 30      // Keyframe every 30 frames
+              audioBitsPerSecond: 192000,    // Higher bitrate for better voice quality
+              videoBitsPerSecond: 3000000,   // Lower video bitrate to prioritize audio
+              videoKeyFrameInterval: 60      // Less frequent keyframes
           });
           
           recordedChunks = [];
@@ -2217,15 +2222,15 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   finalBg.src = mainBg.src;
                   finalDiv.style.display = "flex";
                   
-                  // ✅ FIXED: Show actual recording duration
+                  // Show actual recording duration
                   const minutes = Math.floor(recordingDuration / 60);
                   const seconds = Math.floor(recordingDuration % 60);
                   finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
                   
-                  // ✅ FIXED: Set download link with MP4 extension and proper metadata
+                  // Set download link
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
                   
-                  // Determine file extension based on mimeType
+                  // Determine file extension
                   let extension = '';
                   if (mimeType.includes('mp4')) {
                       extension = '_KARAOKE.mp4';
@@ -2248,17 +2253,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                           videoWidth: tempVideo.videoWidth,
                           videoHeight: tempVideo.videoHeight
                       });
-                      
-                      // If duration is 0, try to set it from recordingDuration
-                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
-                          console.log('Fixing duration metadata...');
-                          // Create a new blob with proper metadata by downloading and re-encoding
-                          fixVideoDuration(url, recordingDuration).then(fixedUrl => {
-                              if (fixedUrl) {
-                                  downloadRecordingBtn.href = fixedUrl;
-                              }
-                          });
-                      }
                   };
                   
                   // Playback button
@@ -2290,8 +2284,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               }
           };
           
-          // Start recording
-          mediaRecorder.start(1000); // Collect data every second
+          // Start recording with larger timeslice for better audio chunks
+          mediaRecorder.start(500); // Collect data every 500ms for smoother recording
           
           status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
           
@@ -2301,7 +2295,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, songDuration + 2000); // Add 2 seconds buffer
+          }, (actualDuration * 1000) + 2000); // Add 2 seconds buffer
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2309,40 +2303,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           resetUIOnError();
       }
   };
-
-  /* ================== FIX VIDEO DURATION METADATA ================== */
-  async function fixVideoDuration(videoUrl, duration) {
-      try {
-          // Create a video element
-          const video = document.createElement('video');
-          video.src = videoUrl;
-          
-          // Wait for metadata to load
-          await new Promise((resolve, reject) => {
-              video.onloadedmetadata = resolve;
-              video.onerror = reject;
-              video.load();
-          });
-          
-          // If duration is already correct, return original URL
-          if (video.duration > 0 && Math.abs(video.duration - duration) < 2) {
-              return videoUrl;
-          }
-          
-          console.log('Video needs duration fix:', {
-              currentDuration: video.duration,
-              expectedDuration: duration
-          });
-          
-          // For MP4 files, we can't easily fix in browser
-          // But we can at least provide the correct file
-          return videoUrl;
-          
-      } catch (error) {
-          console.error('Error fixing video duration:', error);
-          return videoUrl;
-      }
-  }
 
   /* ================== CLEANUP AUDIO SOURCES ================== */
   function cleanupAudioSources() {
@@ -2373,6 +2333,20 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               accGain.disconnect();
           } catch(e) {}
           accGain = null;
+      }
+      
+      if (compressor) {
+          try {
+              compressor.disconnect();
+          } catch(e) {}
+          compressor = null;
+      }
+      
+      if (highPassFilter) {
+          try {
+              highPassFilter.disconnect();
+          } catch(e) {}
+          highPassFilter = null;
       }
       
       if (destination) {
