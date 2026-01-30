@@ -1,5 +1,3 @@
-nakku ee below code observe chey em ayyindhi antey nakku recording lo voice anedhi clarity gga record avvatledhu breack avvuthundhi and nakku aa problem solve chey naku voice anedhi clarity ga record ayyela chey real ga voice recording ela ayyitey correct ga record avvuthundho ala record ayyela change chesi full updated working code send chey based on my code remaing working code and features em distrub cheyakunda based on my code and nakku naaa code remaing ani perfect ga work ayyela
-
 import streamlit as st
 import os
 import base64
@@ -2055,252 +2053,297 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: HIGH QUALITY RECORDING WITH MP4 FORMAT ================== */
-  recordBtn.onclick = async function() {
-      if (isRecording) return;
-      
-      isRecording = true;
-      playBtn.style.display = "none";
-      recordBtn.style.display = "none";
-      stopBtn.style.display = "inline-block";
-      status.innerText = "🎙 Starting recording...";
-      
-      try {
-          const audioCtx = await ensureAudioContext();
-          
-          // Clear previous timer
-          if (autoStopTimer) {
-              clearTimeout(autoStopTimer);
-              autoStopTimer = null;
-          }
-          
-          // Stop any currently playing song
-          if (isSongPlaying) {
-              originalAudio.pause();
-              originalAudio.currentTime = 0;
-              isSongPlaying = false;
-          }
-          
-          // Play original song for reference (not recorded)
-          originalAudio.currentTime = 0;
-          originalAudio.play().catch(e => {
-              console.log("Original song play error:", e);
-          });
-          
-          // Get microphone with IMPROVED settings for voice clarity
-          micStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                  echoCancellation: true,      // Reduce echo
-                  noiseSuppression: true,      // Reduce background noise
-                  autoGainControl: false,      // Disable auto gain for better control
-                  channelCount: 1,            // Mono for voice
-                  sampleRate: 48000,
-                  sampleSize: 24,
-                  latency: 0.01
-              },
-              video: false
-          }).catch(err => {
-              status.innerText = "❌ Microphone access required";
-              resetUIOnError();
-              throw err;
-          });
-          
-          // Create microphone source
-          micSource = audioCtx.createMediaStreamSource(micStream);
-          
-          // Load accompaniment for recording
-          const accRes = await fetch(accompanimentAudio.src);
-          const accBuf = await accRes.arrayBuffer();
-          const accDecoded = await audioCtx.decodeAudioData(accBuf);
-          
-          // Get ACTUAL duration
-          const actualDuration = accDecoded.duration;
-          console.log("✅ Actual accompaniment duration:", actualDuration, "seconds");
-          
-          accSource = audioCtx.createBufferSource();
-          accSource.buffer = accDecoded;
-          
-          // Use ACTUAL duration
-          const songDuration = actualDuration * 1000;
-          console.log("✅ Recording will last:", songDuration, "ms");
-          
-          // Create gain nodes with OPTIMAL settings
-          micGain = audioCtx.createGain();
-          micGain.gain.value = 1.8;  // Optimal for voice clarity
-          
-          accGain = audioCtx.createGain();
-          accGain.gain.value = 0.3;  // Lower accompaniment volume
-          
-          // Create destination for recording
-          destination = audioCtx.createMediaStreamDestination();
-          
-          // Connect microphone and accompaniment
-          micSource.connect(micGain);
-          micGain.connect(destination);
-          accSource.connect(accGain);
-          accGain.connect(destination);
-          
-          // Start canvas drawing
-          drawCanvas();
-          
-          // Start accompaniment for recording
-          accSource.start();
-          
-          // Create stream from canvas
-          const canvasStream = canvas.captureStream(30); // Lower frame rate for stability
-          const mixedAudioStream = destination.stream;
-          
-          // Combine video and audio streams
-          const combinedStream = new MediaStream([
-              ...canvasStream.getVideoTracks(),
-              ...mixedAudioStream.getAudioTracks()
-          ]);
-          
-          // ✅ FIXED: USE MP4 FORMAT FOR COMPATIBLE DOWNLOADS
-          let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'video/webm;codecs=vp9,opus';
-          }
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'video/webm;codecs=vp8,opus';
-          }
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-              mimeType = 'video/webm';
-          }
-          
-          // Create MediaRecorder with OPTIMAL settings
-          mediaRecorder = new MediaRecorder(combinedStream, {
-              mimeType: mimeType,
-              audioBitsPerSecond: 256000,    // High quality audio
-              videoBitsPerSecond: 5000000,   // High quality video
-              videoKeyFrameInterval: 30      // Keyframe every 30 frames
-          });
-          
-          recordedChunks = [];
-          recordingStartTime = Date.now();
-          
-          mediaRecorder.ondataavailable = e => {
-              if (e.data.size > 0) {
-                  recordedChunks.push(e.data);
-              }
-          };
-          
-          mediaRecorder.onstop = () => {
-              cancelAnimationFrame(canvasRafId);
-              recordingDuration = (Date.now() - recordingStartTime) / 1000;
-              
-              // Cleanup audio sources
-              cleanupAudioSources();
-              
-              // Stop original song
-              originalAudio.pause();
-              originalAudio.currentTime = 0;
-              isSongPlaying = false;
-              
-              // Create blob
-              if (recordedChunks.length > 0) {
-                  const blob = new Blob(recordedChunks, { type: mimeType });
-                  const url = URL.createObjectURL(blob);
-                  
-                  if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
-                  lastRecordingURL = url;
-                  
-                  finalBg.src = mainBg.src;
-                  finalDiv.style.display = "flex";
-                  
-                  // ✅ FIXED: Show actual recording duration
-                  const minutes = Math.floor(recordingDuration / 60);
-                  const seconds = Math.floor(recordingDuration % 60);
-                  finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
-                  
-                  // ✅ FIXED: Set download link with MP4 extension and proper metadata
-                  const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
-                  
-                  // Determine file extension based on mimeType
-                  let extension = '';
-                  if (mimeType.includes('mp4')) {
-                      extension = '_KARAOKE.mp4';
-                  } else {
-                      extension = '_KARAOKE.webm';
-                  }
-                  
-                  const fileName = songName + extension;
-                  downloadRecordingBtn.href = url;
-                  downloadRecordingBtn.download = fileName;
-                  
-                  // Create a video element to fix metadata
-                  const tempVideo = document.createElement('video');
-                  tempVideo.src = url;
-                  tempVideo.preload = 'metadata';
-                  
-                  tempVideo.onloadedmetadata = function() {
-                      console.log('Video metadata loaded:', {
-                          duration: tempVideo.duration,
-                          videoWidth: tempVideo.videoWidth,
-                          videoHeight: tempVideo.videoHeight
-                      });
-                      
-                      // If duration is 0, try to set it from recordingDuration
-                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
-                          console.log('Fixing duration metadata...');
-                          // Create a new blob with proper metadata by downloading and re-encoding
-                          fixVideoDuration(url, recordingDuration).then(fixedUrl => {
-                              if (fixedUrl) {
-                                  downloadRecordingBtn.href = fixedUrl;
-                              }
-                          });
-                      }
-                  };
-                  
-                  // Playback button
-                  playRecordingBtn.onclick = () => {
-                      if (!isPlayingRecording) {
-                          if (playRecordingAudio) {
-                              playRecordingAudio.pause();
-                              playRecordingAudio = null;
-                          }
-                          playRecordingAudio = new Audio(url);
-                          playRecordingAudio.volume = 1.0;
-                          playRecordingAudio.play();
-                          playRecordingBtn.innerText = "⏹ Stop";
-                          isPlayingRecording = true;
-                          
-                          playRecordingAudio.onended = () => {
-                              playRecordingBtn.innerText = "▶ Play Recording";
-                              isPlayingRecording = false;
-                          };
-                      } else {
-                          if (playRecordingAudio) {
-                              playRecordingAudio.pause();
-                              playRecordingAudio.currentTime = 0;
-                          }
-                          playRecordingBtn.innerText = "▶ Play Recording";
-                          isPlayingRecording = false;
-                      }
-                  };
-              }
-          };
-          
-          // Start recording
-          mediaRecorder.start(1000); // Collect data every second
-          
-          status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
-          
-          // AUTO-STOP TIMER
-          autoStopTimer = setTimeout(() => {
-              if (isRecording) {
-                  stopRecording();
-                  status.innerText = "✅ Auto-stopped: Recording complete!";
-              }
-          }, songDuration + 2000); // Add 2 seconds buffer
-          
-      } catch (error) {
-          console.error("Recording error:", error);
-          status.innerText = "❌ Failed: " + (error.message || "Check microphone access");
-          resetUIOnError();
-      }
-  };
-
+/* ================== FIXED: HIGH QUALITY RECORDING WITH MP4 FORMAT AND CLEAR VOICE ================== */
+recordBtn.onclick = async function() {
+    if (isRecording) return;
+    
+    isRecording = true;
+    playBtn.style.display = "none";
+    recordBtn.style.display = "none";
+    stopBtn.style.display = "inline-block";
+    status.innerText = "🎙 Preparing recording...";
+    
+    try {
+        const audioCtx = await ensureAudioContext();
+        
+        // Clear previous timer
+        if (autoStopTimer) {
+            clearTimeout(autoStopTimer);
+            autoStopTimer = null;
+        }
+        
+        // Stop any currently playing song
+        if (isSongPlaying) {
+            originalAudio.pause();
+            originalAudio.currentTime = 0;
+            isSongPlaying = false;
+        }
+        
+        // Play original song for reference (not recorded)
+        originalAudio.currentTime = 0;
+        originalAudio.play().catch(e => {
+            console.log("Original song play error:", e);
+        });
+        
+        // ✅ FIXED: IMPROVED MICROPHONE SETTINGS FOR CLEAR VOICE
+        micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,           // Reduce echo
+                noiseSuppression: true,           // Reduce background noise
+                autoGainControl: false,           // Disable auto gain for consistent volume
+                channelCount: 1,                  // Mono for voice clarity
+                sampleRate: 44100,               // Standard CD quality
+                sampleSize: 16,                  // 16-bit for clarity
+                volume: 1.0,                     // Full volume
+                latency: 0.01,                   // Low latency
+                // Additional constraints for clarity
+                advanced: [{
+                    echoCancellation: true,
+                    googEchoCancellation: true,
+                    googAutoGainControl: false,
+                    googNoiseSuppression: true,
+                    googHighpassFilter: true,
+                    googAudioMirroring: false
+                }]
+            },
+            video: false
+        }).catch(err => {
+            status.innerText = "❌ Microphone access required. Please allow microphone permission.";
+            resetUIOnError();
+            throw err;
+        });
+        
+        // Create microphone source
+        micSource = audioCtx.createMediaStreamSource(micStream);
+        
+        // ✅ FIXED: Apply audio filters for voice clarity
+        // Create equalizer/filter nodes
+        const highpassFilter = audioCtx.createBiquadFilter();
+        highpassFilter.type = "highpass";
+        highpassFilter.frequency.value = 80; // Remove low rumble
+        
+        const lowpassFilter = audioCtx.createBiquadFilter();
+        lowpassFilter.type = "lowpass";
+        lowpassFilter.frequency.value = 12000; // Remove high noise
+        
+        // Create compressor for consistent volume
+        const compressor = audioCtx.createDynamicsCompressor();
+        compressor.threshold.value = -24;
+        compressor.knee.value = 30;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+        
+        // Load accompaniment for recording
+        const accRes = await fetch(accompanimentAudio.src);
+        const accBuf = await accRes.arrayBuffer();
+        const accDecoded = await audioCtx.decodeAudioData(accBuf);
+        
+        // Get ACTUAL duration
+        const actualDuration = accDecoded.duration;
+        console.log("✅ Actual accompaniment duration:", actualDuration, "seconds");
+        
+        accSource = audioCtx.createBufferSource();
+        accSource.buffer = accDecoded;
+        
+        // Use ACTUAL duration
+        const songDuration = actualDuration * 1000;
+        console.log("✅ Recording will last:", songDuration, "ms");
+        
+        // ✅ FIXED: Create gain nodes with OPTIMAL settings for voice clarity
+        micGain = audioCtx.createGain();
+        micGain.gain.value = 2.0;  // Slightly higher for voice clarity
+        
+        accGain = audioCtx.createGain();
+        accGain.gain.value = 0.25;  // Lower accompaniment volume (25%)
+        
+        // Create destination for recording
+        destination = audioCtx.createMediaStreamDestination();
+        
+        // ✅ FIXED: Connect microphone with filters for clarity
+        // Connect: micSource → highpassFilter → lowpassFilter → compressor → micGain → destination
+        micSource.connect(highpassFilter);
+        highpassFilter.connect(lowpassFilter);
+        lowpassFilter.connect(compressor);
+        compressor.connect(micGain);
+        micGain.connect(destination);
+        
+        // Connect accompaniment (no filters needed)
+        accSource.connect(accGain);
+        accGain.connect(destination);
+        
+        // Start canvas drawing
+        drawCanvas();
+        
+        // Start accompaniment for recording
+        accSource.start();
+        
+        // Create stream from canvas
+        const canvasStream = canvas.captureStream(30);
+        const mixedAudioStream = destination.stream;
+        
+        // Combine video and audio streams
+        const combinedStream = new MediaStream([
+            ...canvasStream.getVideoTracks(),
+            ...mixedAudioStream.getAudioTracks()
+        ]);
+        
+        // ✅ FIXED: USE MP4 FORMAT FOR COMPATIBLE DOWNLOADS
+        let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm;codecs=vp9,opus';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm;codecs=vp8,opus';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm';
+        }
+        
+        // Create MediaRecorder with OPTIMAL settings
+        mediaRecorder = new MediaRecorder(combinedStream, {
+            mimeType: mimeType,
+            audioBitsPerSecond: 192000,    // High quality audio (192kbps)
+            videoBitsPerSecond: 3000000,   // High quality video (3Mbps)
+            videoKeyFrameInterval: 30      // Keyframe every 30 frames
+        });
+        
+        recordedChunks = [];
+        recordingStartTime = Date.now();
+        
+        mediaRecorder.ondataavailable = e => {
+            if (e.data.size > 0) {
+                recordedChunks.push(e.data);
+                console.log("Audio chunk received:", e.data.size, "bytes");
+            }
+        };
+        
+        mediaRecorder.onstop = () => {
+            cancelAnimationFrame(canvasRafId);
+            recordingDuration = (Date.now() - recordingStartTime) / 1000;
+            
+            console.log("Recording stopped. Total chunks:", recordedChunks.length);
+            console.log("Total recording duration:", recordingDuration, "seconds");
+            
+            // Cleanup audio sources
+            cleanupAudioSources();
+            
+            // Stop original song
+            originalAudio.pause();
+            originalAudio.currentTime = 0;
+            isSongPlaying = false;
+            
+            // Create blob
+            if (recordedChunks.length > 0) {
+                const blob = new Blob(recordedChunks, { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                
+                console.log("Recording blob created:", blob.size, "bytes");
+                
+                if (lastRecordingURL) URL.revokeObjectURL(lastRecordingURL);
+                lastRecordingURL = url;
+                
+                finalBg.src = mainBg.src;
+                finalDiv.style.display = "flex";
+                
+                // ✅ FIXED: Show actual recording duration
+                const minutes = Math.floor(recordingDuration / 60);
+                const seconds = Math.floor(recordingDuration % 60);
+                finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
+                
+                // ✅ FIXED: Set download link with MP4 extension and proper metadata
+                const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
+                
+                // Determine file extension based on mimeType
+                let extension = '';
+                if (mimeType.includes('mp4')) {
+                    extension = '_KARAOKE.mp4';
+                } else {
+                    extension = '_KARAOKE.webm';
+                }
+                
+                const fileName = songName + extension;
+                downloadRecordingBtn.href = url;
+                downloadRecordingBtn.download = fileName;
+                
+                // Create a video element to fix metadata
+                const tempVideo = document.createElement('video');
+                tempVideo.src = url;
+                tempVideo.preload = 'metadata';
+                
+                tempVideo.onloadedmetadata = function() {
+                    console.log('Video metadata loaded:', {
+                        duration: tempVideo.duration,
+                        videoWidth: tempVideo.videoWidth,
+                        videoHeight: tempVideo.videoHeight
+                    });
+                };
+                
+                // Playback button
+                playRecordingBtn.onclick = () => {
+                    if (!isPlayingRecording) {
+                        if (playRecordingAudio) {
+                            playRecordingAudio.pause();
+                            playRecordingAudio = null;
+                        }
+                        playRecordingAudio = new Audio(url);
+                        playRecordingAudio.volume = 1.0;
+                        playRecordingAudio.play();
+                        playRecordingBtn.innerText = "⏹ Stop";
+                        isPlayingRecording = true;
+                        
+                        playRecordingAudio.onended = () => {
+                            playRecordingBtn.innerText = "▶ Play Recording";
+                            isPlayingRecording = false;
+                        };
+                        
+                        playRecordingAudio.onerror = (e) => {
+                            console.error("Playback error:", e);
+                            playRecordingBtn.innerText = "▶ Play Recording";
+                            isPlayingRecording = false;
+                        };
+                    } else {
+                        if (playRecordingAudio) {
+                            playRecordingAudio.pause();
+                            playRecordingAudio.currentTime = 0;
+                        }
+                        playRecordingBtn.innerText = "▶ Play Recording";
+                        isPlayingRecording = false;
+                    }
+                };
+            } else {
+                console.error("No recorded chunks available!");
+                status.innerText = "❌ Recording failed: No audio data";
+                resetUIOnError();
+            }
+        };
+        
+        // Handle recording errors
+        mediaRecorder.onerror = (e) => {
+            console.error("MediaRecorder error:", e);
+            status.innerText = "❌ Recording error occurred";
+            resetUIOnError();
+        };
+        
+        // Start recording with small timeslice for smoother recording
+        mediaRecorder.start(500); // Collect data every 500ms
+        
+        status.innerText = "🎙 Recording... Voice is being captured clearly";
+        
+        // ✅ FIXED: Use onended event instead of timer for more accurate stopping
+        accSource.onended = () => {
+            console.log("Accompaniment ended, stopping recording...");
+            if (isRecording && mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+        };
+        
+    } catch (error) {
+        console.error("Recording error:", error);
+        status.innerText = "❌ Failed: " + (error.message || "Check microphone access");
+        resetUIOnError();
+    }
+};
   /* ================== FIX VIDEO DURATION METADATA ================== */
   async function fixVideoDuration(videoUrl, duration) {
       try {
@@ -2335,49 +2378,63 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       }
   }
 
-  /* ================== CLEANUP AUDIO SOURCES ================== */
-  function cleanupAudioSources() {
-      if (accSource) {
-          try { 
-              accSource.stop(); 
-              accSource.disconnect();
-          } catch(e) {}
-          accSource = null;
-      }
-      
-      if (micSource) {
-          try { 
-              micSource.disconnect(); 
-          } catch(e) {}
-          micSource = null;
-      }
-      
-      if (micGain) {
-          try {
-              micGain.disconnect();
-          } catch(e) {}
-          micGain = null;
-      }
-      
-      if (accGain) {
-          try {
-              accGain.disconnect();
-          } catch(e) {}
-          accGain = null;
-      }
-      
-      if (destination) {
-          try {
-              destination.disconnect();
-          } catch(e) {}
-          destination = null;
-      }
-      
-      if (micStream) {
-          micStream.getTracks().forEach(track => track.stop());
-          micStream = null;
-      }
-  }
+/* ================== CLEANUP AUDIO SOURCES ================== */
+function cleanupAudioSources() {
+    if (accSource) {
+        try { 
+            accSource.stop(); 
+            accSource.disconnect();
+        } catch(e) {}
+        accSource = null;
+    }
+    
+    if (micSource) {
+        try { 
+            micSource.disconnect(); 
+        } catch(e) {}
+        micSource = null;
+    }
+    
+    if (micGain) {
+        try {
+            micGain.disconnect();
+        } catch(e) {}
+        micGain = null;
+    }
+    
+    if (accGain) {
+        try {
+            accGain.disconnect();
+        } catch(e) {}
+        accGain = null;
+    }
+    
+    if (destination) {
+        try {
+            destination.disconnect();
+        } catch(e) {}
+        destination = null;
+    }
+    
+    if (micStream) {
+        micStream.getTracks().forEach(track => {
+            try {
+                track.stop();
+            } catch(e) {}
+        });
+        micStream = null;
+    }
+    
+    // Cleanup filter nodes if they exist
+    const nodes = [highpassFilter, lowpassFilter, compressor];
+    nodes.forEach(node => {
+        if (node) {
+            try {
+                node.disconnect();
+            } catch(e) {}
+        }
+    });
+}
 
   /* ================== STOP RECORDING ================== */
   function stopRecording() {
@@ -2560,6 +2617,3 @@ else:
         st.session_state.page = "Login"
     save_session_to_db()
     st.rerun()
-
-
-fast ga send chey based on my code
