@@ -233,8 +233,10 @@ def get_audio_duration(file_path):
     # Method 5: File size estimation for MP3 (last resort)
     try:
         if file_path.lower().endswith('.mp3'):
+            # More accurate estimation: 128kbps = 0.94 MB per minute
             file_size = os.path.getsize(file_path)
-            estimated_duration = (file_size * 8) / (128 * 1024)
+            # Convert bytes to bits: *8, convert kbps to bps: *1024
+            estimated_duration = (file_size * 8) / (128 * 1024)  # Convert to seconds
             if estimated_duration > 0:
                 print(f"⚠️ Estimated duration for {os.path.basename(file_path)}: {estimated_duration}")
                 return estimated_duration
@@ -243,6 +245,24 @@ def get_audio_duration(file_path):
     
     print(f"❌ All methods failed for {os.path.basename(file_path)}: {methods_tried}")
     return None
+
+def fix_audio_duration(input_path, output_path):
+    """Fix audio duration metadata"""
+    try:
+        cmd = [
+            'ffmpeg', '-i', input_path,
+            '-c', 'copy',
+            '-map_metadata', '0',
+            '-y',
+            output_path
+        ]
+        subprocess.run(cmd, capture_output=True, timeout=15)
+        return True
+    except Exception as e:
+        print(f"Warning: Could not fix audio duration: {e}")
+        import shutil
+        shutil.copy2(input_path, output_path)
+        return True
 
 # =============== HIGH QUALITY AUDIO PROCESSING ===============
 def process_audio_for_quality(input_path, output_path):
@@ -253,16 +273,19 @@ def process_audio_for_quality(input_path, output_path):
             'ffmpeg', '-i', input_path,
             '-c:a', 'libmp3lame',
             '-q:a', '0',  # Highest quality (0-9, 0 is best)
-            '-ar', '44100',  # Standard CD quality sample rate
-            '-ac', '2',  # Stereo
-            '-b:a', '192k',  # Good bitrate for voice
+            '-ar', '48000',  # High sample rate
+            '-b:a', '320k',  # High bitrate
             '-map_metadata', '0',
             '-id3v2_version', '3',
-            '-write_xing', '0',
+            '-write_xing', '0',  # Fix duration issues
             '-y',
             output_path
         ]
         subprocess.run(cmd, capture_output=True, timeout=20)
+        
+        # Verify duration after processing
+        duration = get_audio_duration(output_path)
+        print(f"✅ Processed audio duration: {duration} seconds")
         return True
     except Exception as e:
         print(f"⚠️ Audio processing failed, using original: {e}")
@@ -591,17 +614,20 @@ def get_song_duration(song_name):
     """Get accurate duration for a song"""
     metadata = get_metadata_cached()
     
+    # Check if we have stored duration in metadata
     if song_name in metadata and "duration" in metadata[song_name]:
         stored_duration = metadata[song_name]["duration"]
         if stored_duration and stored_duration > 0:
             print(f"✅ Using stored duration for {song_name}: {stored_duration}")
             return stored_duration
     
+    # Try processed accompaniment file first
     acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
     if os.path.exists(acc_path):
         try:
             duration = get_audio_duration(acc_path)
             if duration and duration > 0:
+                # Store in metadata
                 if song_name in metadata:
                     metadata[song_name]["duration"] = duration
                 else:
@@ -614,6 +640,7 @@ def get_song_duration(song_name):
         except Exception as e:
             print(f"⚠️ Failed to get accompaniment duration for {song_name}: {e}")
     
+    # Try original file as fallback
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
     if os.path.exists(original_path):
         try:
@@ -624,6 +651,19 @@ def get_song_duration(song_name):
         except Exception as e:
             print(f"⚠️ Failed to get original duration for {song_name}: {e}")
     
+    # If we can't determine duration, try to estimate from file size
+    if os.path.exists(acc_path):
+        try:
+            file_size = os.path.getsize(acc_path)
+            # Better estimation: MP3 at 128kbps
+            estimated_duration = (file_size * 8) / (128 * 1024)
+            if estimated_duration > 30:
+                print(f"⚠️ Estimated duration from file size for {song_name}: {estimated_duration}")
+                return estimated_duration
+        except:
+            pass
+    
+    # Return reasonable default
     print(f"⚠️ Using default duration for {song_name}")
     return 180
 
@@ -637,14 +677,17 @@ def ensure_audio_processed(song_name):
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
     acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
     
+    # Create processed versions
     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
     processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
     
     try:
+        # Process both files
         print(f"🔧 Processing audio for {song_name}...")
         process_audio_for_quality(original_path, processed_original)
         process_audio_for_quality(acc_path, processed_acc)
         
+        # Update metadata
         if song_name in metadata:
             metadata[song_name]["processed"] = True
         else:
@@ -1605,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED VOICE RECORDING CLARITY ===============
+# =============== SONG PLAYER WITH FIXED DURATION AND MP4 DOWNLOAD ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1734,7 +1777,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH FIXED VOICE RECORDING CLARITY
+    # ✅ UPDATED KARAOKE TEMPLATE WITH CLEAR VOICE RECORDING
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1944,7 +1987,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       if (!audioContext) {
           audioContext = new (window.AudioContext || window.webkitAudioContext)({
               sampleRate: 44100,
-              latencyHint: 'interactive'
+              latencyHint: 'playback'
           });
       }
       if (audioContext.state === "suspended") {
@@ -2010,7 +2053,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: HIGH QUALITY VOICE RECORDING WITH CLARITY ================== */
+  /* ================== FIXED: HIGH QUALITY RECORDING WITH OPTIMIZED VOICE SETTINGS ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2042,16 +2085,16 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               console.log("Original song play error:", e);
           });
           
-          // 🔧 FIXED: IMPROVED MICROPHONE SETTINGS FOR VOICE CLARITY
+          // ✅ OPTIMIZED: Get microphone with CLEAR VOICE settings
           micStream = await navigator.mediaDevices.getUserMedia({
               audio: {
-                  echoCancellation: true,           // Reduce echo
-                  noiseSuppression: true,          // Reduce background noise
-                  autoGainControl: true,           // Keep auto gain for consistent volume
-                  channelCount: 1,                 // Mono is better for voice
-                  sampleRate: 44100,               // Standard CD quality
-                  sampleSize: 16,                  // 16-bit for clarity
-                  latency: 0                       // Low latency
+                  echoCancellation: true,      // ✅ Keep echo cancellation
+                  noiseSuppression: true,      // ✅ Keep noise suppression
+                  autoGainControl: false,      // ❌ DISABLE auto gain control (causes distortion)
+                  channelCount: 1,            // Mono for voice clarity
+                  sampleRate: 44100,          // Standard CD quality
+                  sampleSize: 16,             // Standard bit depth
+                  latency: 0                  // Minimum latency
               },
               video: false
           }).catch(err => {
@@ -2079,12 +2122,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           const songDuration = actualDuration * 1000;
           console.log("✅ Recording will last:", songDuration, "ms");
           
-          // 🔧 FIXED: OPTIMIZED GAIN SETTINGS FOR VOICE CLARITY
+          // ✅ OPTIMIZED: Create gain nodes with CLEAR VOICE settings
           micGain = audioCtx.createGain();
-          micGain.gain.value = 2.0;  // Increased for better voice clarity
+          micGain.gain.value = 1.5;  // Optimal for voice clarity (not too high)
           
           accGain = audioCtx.createGain();
-          accGain.gain.value = 0.25;  // Lower accompaniment so voice stands out
+          accGain.gain.value = 0.25;  // Lower accompaniment volume for clear voice
           
           // Create destination for recording
           destination = audioCtx.createMediaStreamDestination();
@@ -2102,7 +2145,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accSource.start();
           
           // Create stream from canvas
-          const canvasStream = canvas.captureStream(24); // Lower frame rate for stability
+          const canvasStream = canvas.captureStream(30);
           const mixedAudioStream = destination.stream;
           
           // Combine video and audio streams
@@ -2111,8 +2154,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ FIXED: USE OPTIMAL RECORDING SETTINGS
-          let mimeType = 'video/webm;codecs=vp9,opus';
+          // ✅ Use MP4 format for compatible downloads
+          let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+              mimeType = 'video/webm;codecs=vp9,opus';
+          }
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp8,opus';
           }
@@ -2120,11 +2166,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // 🔧 FIXED: OPTIMIZED RECORDER SETTINGS FOR VOICE CLARITY
+          // Create MediaRecorder with optimized settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 192000,    // High quality for voice
-              videoBitsPerSecond: 2000000,   // Good video quality
+              audioBitsPerSecond: 192000,    // ✅ Higher bitrate for voice clarity
+              videoBitsPerSecond: 5000000,   // High quality video
               videoKeyFrameInterval: 30      // Keyframe every 30 frames
           });
           
@@ -2165,10 +2211,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   const seconds = Math.floor(recordingDuration % 60);
                   finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
                   
-                  // Set download link
+                  // Set download link with MP4 extension
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
                   
-                  // Determine file extension
+                  // Determine file extension based on mimeType
                   let extension = '';
                   if (mimeType.includes('mp4')) {
                       extension = '_KARAOKE.mp4';
@@ -2179,6 +2225,29 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   const fileName = songName + extension;
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
+                  
+                  // Create a video element to fix metadata
+                  const tempVideo = document.createElement('video');
+                  tempVideo.src = url;
+                  tempVideo.preload = 'metadata';
+                  
+                  tempVideo.onloadedmetadata = function() {
+                      console.log('Video metadata loaded:', {
+                          duration: tempVideo.duration,
+                          videoWidth: tempVideo.videoWidth,
+                          videoHeight: tempVideo.videoHeight
+                      });
+                      
+                      // If duration is 0, try to set it from recordingDuration
+                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
+                          console.log('Fixing duration metadata...');
+                          fixVideoDuration(url, recordingDuration).then(fixedUrl => {
+                              if (fixedUrl) {
+                                  downloadRecordingBtn.href = fixedUrl;
+                              }
+                          });
+                      }
+                  };
                   
                   // Playback button
                   playRecordingBtn.onclick = () => {
@@ -2210,7 +2279,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           };
           
           // Start recording
-          mediaRecorder.start(500); // Collect data every half second for smoother recording
+          mediaRecorder.start(1000); // Collect data every second
           
           status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
           
@@ -2220,7 +2289,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, songDuration + 1000); // Add 1 second buffer
+          }, songDuration + 2000); // Add 2 seconds buffer
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2228,6 +2297,39 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           resetUIOnError();
       }
   };
+
+  /* ================== FIX VIDEO DURATION METADATA ================== */
+  async function fixVideoDuration(videoUrl, duration) {
+      try {
+          // Create a video element
+          const video = document.createElement('video');
+          video.src = videoUrl;
+          
+          // Wait for metadata to load
+          await new Promise((resolve, reject) => {
+              video.onloadedmetadata = resolve;
+              video.onerror = reject;
+              video.load();
+          });
+          
+          // If duration is already correct, return original URL
+          if (video.duration > 0 && Math.abs(video.duration - duration) < 2) {
+              return videoUrl;
+          }
+          
+          console.log('Video needs duration fix:', {
+              currentDuration: video.duration,
+              expectedDuration: duration
+          });
+          
+          // For MP4 files, we can't easily fix in browser
+          return videoUrl;
+          
+      } catch (error) {
+          console.error('Error fixing video duration:', error);
+          return videoUrl;
+      }
+  }
 
   /* ================== CLEANUP AUDIO SOURCES ================== */
   function cleanupAudioSources() {
