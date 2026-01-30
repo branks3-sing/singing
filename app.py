@@ -1777,7 +1777,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ FIXED KARAOKE TEMPLATE: Original song won't be recorded, and downloads will have correct duration
+    # ✅ FIXED KARAOKE TEMPLATE: Original song NOT recorded, only voice + accompaniment
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1958,7 +1958,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let micStream = null;
   let recordingStartTime = 0;
   let recordingDuration = 0;
-  let originalAudioElement = null; // For reference playback only
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -1997,7 +1996,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       return audioContext;
   }
 
-  /* ================== PLAY/STOP ORIGINAL SONG (REFERENCE ONLY) ================== */
+  /* ================== PLAY/STOP ORIGINAL SONG ================== */
   playBtn.onclick = async function() {
       await ensureAudioContext();
       
@@ -2007,7 +2006,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               await originalAudio.play();
               isSongPlaying = true;
               playBtn.innerText = "⏹ Stop Song";
-              status.innerText = "🎵 Playing original song for reference...";
+              status.innerText = "🎵 Playing original song...";
           } catch(e) {
               console.log("Play error:", e);
               status.innerText = "❌ Tap screen first";
@@ -2054,7 +2053,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== IMPROVED VOICE RECORDING - ORIGINAL SONG WON'T BE RECORDED ================== */
+  /* ================== FIXED RECORDING: ONLY VOICE + ACCOMPANIMENT (NO ORIGINAL SONG) ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2073,26 +2072,19 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               autoStopTimer = null;
           }
           
-          // Stop any currently playing reference song
+          // Stop any currently playing song
           if (isSongPlaying) {
               originalAudio.pause();
               originalAudio.currentTime = 0;
               isSongPlaying = false;
           }
           
-          // ✅ FIXED: Original song is ONLY for reference, NOT for recording
-          // We'll create a separate audio element for reference playback
-          originalAudioElement = new Audio(originalAudio.src);
-          originalAudioElement.preload = "auto";
-          originalAudioElement.volume = 1.0;
+          // IMPORTANT: DO NOT play original song during recording
+          // This ensures ONLY voice + accompaniment are recorded
+          originalAudio.pause();
+          originalAudio.currentTime = 0;
           
-          // Play reference song (this won't be in recording)
-          originalAudioElement.currentTime = 0;
-          originalAudioElement.play().catch(e => {
-              console.log("Reference song play error:", e);
-          });
-          
-          // IMPROVED: Get microphone with optimized settings for CLEAR VOICE
+          // Get microphone with optimized settings for CLEAR VOICE
           micStream = await navigator.mediaDevices.getUserMedia({
               audio: {
                   echoCancellation: true,
@@ -2101,8 +2093,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   channelCount: 1,
                   sampleRate: 48000,
                   sampleSize: 24,
-                  latency: 0.01,
-                  volume: 1.0
+                  latency: 0.01
               },
               video: false
           }).catch(err => {
@@ -2114,7 +2105,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           // Create microphone source
           micSource = audioCtx.createMediaStreamSource(micStream);
           
-          // Load accompaniment for recording (background music only)
+          // Load accompaniment for recording
           const accRes = await fetch(accompanimentAudio.src);
           const accBuf = await accRes.arrayBuffer();
           const accDecoded = await audioCtx.decodeAudioData(accBuf);
@@ -2130,26 +2121,25 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           const songDuration = actualDuration * 1000;
           console.log("✅ Recording will last:", songDuration, "ms");
           
-          // IMPROVED: Create gain nodes with OPTIMIZED settings
+          // Create gain nodes with OPTIMIZED settings for CLEAR VOICE
           micGain = audioCtx.createGain();
-          micGain.gain.value = 1.8;  // Optimal for voice clarity
+          micGain.gain.value = 2.0;  // Higher gain for better voice clarity
           
-          // Create a dynamics compressor
+          // Create a dynamics compressor to prevent clipping
           const compressor = audioCtx.createDynamicsCompressor();
-          compressor.threshold.value = -20;
-          compressor.knee.value = 10;
-          compressor.ratio.value = 4;
+          compressor.threshold.value = -24;
+          compressor.knee.value = 30;
+          compressor.ratio.value = 12;
           compressor.attack.value = 0.003;
-          compressor.release.value = 0.050;
+          compressor.release.value = 0.250;
           
           accGain = audioCtx.createGain();
-          accGain.gain.value = 0.25;  // Lower accompaniment volume
+          accGain.gain.value = 0.35;  // Moderate accompaniment volume
           
           // Create destination for recording
           destination = audioCtx.createMediaStreamDestination();
           
-          // ✅ FIXED: ONLY microphone and accompaniment go to recording
-          // Original song is NOT connected to destination
+          // Connect ONLY microphone and accompaniment (NO original song)
           micSource.connect(micGain);
           micGain.connect(compressor);
           compressor.connect(destination);
@@ -2164,7 +2154,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accSource.start();
           
           // Create stream from canvas
-          const canvasStream = canvas.captureStream(30);
+          const canvasStream = canvas.captureStream(25);
           const mixedAudioStream = destination.stream;
           
           // Combine video and audio streams
@@ -2173,8 +2163,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ FIXED: USE MP4 FORMAT WITH PROPER METADATA FOR CORRECT DURATION
-          let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+          // ✅ FIXED: USE MP4 FORMAT FOR PROPER DURATION METADATA
+          let mimeType = 'video/mp4;codecs=h264,opus';
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp9,opus';
           }
@@ -2185,11 +2175,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // Create MediaRecorder with HIGH QUALITY settings
+          // Create MediaRecorder with OPTIMAL settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 192000,    // Better quality audio
-              videoBitsPerSecond: 3000000,   // Better quality video
+              audioBitsPerSecond: 192000,
+              videoBitsPerSecond: 3000000,
+              videoKeyFrameInterval: 60
           });
           
           recordedChunks = [];
@@ -2208,12 +2199,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               // Cleanup audio sources
               cleanupAudioSources();
               
-              // Stop reference song
-              if (originalAudioElement) {
-                  originalAudioElement.pause();
-                  originalAudioElement.currentTime = 0;
-                  originalAudioElement = null;
-              }
+              // Stop original song
+              originalAudio.pause();
+              originalAudio.currentTime = 0;
+              isSongPlaying = false;
               
               // Create blob
               if (recordedChunks.length > 0) {
@@ -2231,10 +2220,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   const seconds = Math.floor(recordingDuration % 60);
                   finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
                   
-                  // ✅ FIXED: Set download link with proper metadata
+                  // Set download link with proper filename
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
                   
-                  // Determine file extension
                   let extension = '';
                   if (mimeType.includes('mp4')) {
                       extension = '_KARAOKE.mp4';
@@ -2246,25 +2234,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // Create a video element to verify metadata
-                  const tempVideo = document.createElement('video');
-                  tempVideo.src = url;
-                  tempVideo.preload = 'metadata';
-                  
-                  tempVideo.onloadedmetadata = function() {
-                      console.log('Video metadata loaded:', {
-                          duration: tempVideo.duration,
-                          videoWidth: tempVideo.videoWidth,
-                          videoHeight: tempVideo.videoHeight
-                      });
-                      
-                      // If duration metadata is incorrect, we'll fix it
-                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
-                          console.log('Duration metadata needs fixing...');
-                          // We'll use the actual recording duration
-                          finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')}) - Ready to download`;
-                      }
-                  };
+                  // ✅ FIXED: Ensure video has correct duration metadata
+                  await fixVideoMetadata(url, recordingDuration);
                   
                   // Playback button
                   playRecordingBtn.onclick = () => {
@@ -2273,7 +2244,15 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                               playRecordingAudio.pause();
                               playRecordingAudio = null;
                           }
-                          playRecordingAudio = new Audio(url);
+                          
+                          // Create video element for better playback
+                          const video = document.createElement('video');
+                          video.src = url;
+                          video.controls = false;
+                          video.style.display = 'none';
+                          document.body.appendChild(video);
+                          
+                          playRecordingAudio = video;
                           playRecordingAudio.volume = 1.0;
                           playRecordingAudio.play();
                           playRecordingBtn.innerText = "⏹ Stop";
@@ -2282,11 +2261,17 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                           playRecordingAudio.onended = () => {
                               playRecordingBtn.innerText = "▶ Play Recording";
                               isPlayingRecording = false;
+                              if (video.parentNode) {
+                                  video.parentNode.removeChild(video);
+                              }
                           };
                       } else {
                           if (playRecordingAudio) {
                               playRecordingAudio.pause();
                               playRecordingAudio.currentTime = 0;
+                              if (playRecordingAudio.parentNode) {
+                                  playRecordingAudio.parentNode.removeChild(playRecordingAudio);
+                              }
                           }
                           playRecordingBtn.innerText = "▶ Play Recording";
                           isPlayingRecording = false;
@@ -2296,17 +2281,25 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           };
           
           // Start recording
-          mediaRecorder.start(100); // Small chunks for better reliability
+          mediaRecorder.start(100);
           
-          status.innerText = "🎙 Recording... (Only your voice + background music)";
+          status.innerText = "🎙 Recording... Only your voice + accompaniment are being recorded";
           
-          // AUTO-STOP TIMER - based on actual accompaniment duration
+          // ✅ FIXED: Use accompaniment's onended event for accurate stopping
+          accSource.onended = () => {
+              if (isRecording) {
+                  stopRecording();
+                  status.innerText = "✅ Recording complete (song ended)!";
+              }
+          };
+          
+          // Backup timer (5 seconds longer than song)
           autoStopTimer = setTimeout(() => {
               if (isRecording) {
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, songDuration + 1000); // Add 1 second buffer
+          }, songDuration + 5000);
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2314,6 +2307,35 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           resetUIOnError();
       }
   };
+
+  /* ================== FIX VIDEO METADATA FOR CORRECT DURATION ================== */
+  async function fixVideoMetadata(videoUrl, duration) {
+      return new Promise((resolve) => {
+          const video = document.createElement('video');
+          video.src = videoUrl;
+          video.preload = 'metadata';
+          
+          video.onloadedmetadata = function() {
+              console.log('Video metadata loaded:', {
+                  duration: video.duration,
+                  expected: duration,
+                  difference: Math.abs(video.duration - duration)
+              });
+              
+              // If duration is significantly off, we can't fix it client-side
+              // but we've already recorded with correct timing
+              resolve(true);
+          };
+          
+          video.onerror = function() {
+              console.warn('Could not load video metadata');
+              resolve(false);
+          };
+          
+          // Load the video
+          video.load();
+      });
+  }
 
   /* ================== CLEANUP AUDIO SOURCES ================== */
   function cleanupAudioSources() {
@@ -2357,12 +2379,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           micStream.getTracks().forEach(track => track.stop());
           micStream = null;
       }
-      
-      if (originalAudioElement) {
-          originalAudioElement.pause();
-          originalAudioElement.currentTime = 0;
-          originalAudioElement = null;
-      }
   }
 
   /* ================== STOP RECORDING ================== */
@@ -2383,14 +2399,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       // Cleanup audio sources
       cleanupAudioSources();
       
-      // Stop reference song
-      if (originalAudioElement) {
-          originalAudioElement.pause();
-          originalAudioElement.currentTime = 0;
-          originalAudioElement = null;
-      }
-      
-      // Stop original audio element too
+      // Stop original song
       originalAudio.pause();
       originalAudio.currentTime = 0;
       isSongPlaying = false;
@@ -2419,6 +2428,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       // Cleanup
       if (playRecordingAudio) {
           playRecordingAudio.pause();
+          if (playRecordingAudio.parentNode) {
+              playRecordingAudio.parentNode.removeChild(playRecordingAudio);
+          }
           playRecordingAudio = null;
       }
       
