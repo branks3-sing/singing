@@ -1325,7 +1325,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     if duration:
                         minutes = int(duration // 60)
                         seconds = int(duration % 60)
-                        display_name = f"✅ *{song}*"
+                        display_name = f"✅ *{s}*"
                     else:
                         display_name = f"🎶 {s} (Duration: Unknown)"
                     
@@ -2275,7 +2275,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                           // Remove on close
                           videoElement.onended = () => {
                               document.body.removeChild(videoElement);
-                              playRecordingBtn.innerText = "▶ Play Recording";
+                              playRecordingBtn.innerText = "▶ Play";
                               isPlayingRecording = false;
                           };
                           
@@ -2284,7 +2284,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                                   document.exitFullscreen();
                               }
                               document.body.removeChild(videoElement);
-                              playRecordingBtn.innerText = "▶ Play Recording";
+                              playRecordingBtn.innerText = "▶ Play";
                               isPlayingRecording = false;
                           };
                           
@@ -2300,7 +2300,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                               }
                           });
                           
-                          playRecordingBtn.innerText = "▶ Play Recording";
+                          playRecordingBtn.innerText = "▶ Play";
                           isPlayingRecording = false;
                       }
                   };
