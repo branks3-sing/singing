@@ -1,3 +1,5 @@
+nakku ee below code observe chey em ayyindhi antey nakku recording lo voice anedhi clarity gga record avvatledhu breack avvuthundhi and nakku aa problem solve chey naku voice anedhi clarity ga record ayyela chey real ga voice recording ela ayyitey correct ga record avvuthundho ala record ayyela change chesi full updated working code send chey based on my code remaing working code and features em distrub cheyakunda based on my code and nakku naaa code remaing ani perfect ga work ayyela
+
 import streamlit as st
 import os
 import base64
@@ -1777,7 +1779,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH CLEAR VOICE RECORDING
+    # ✅ UPDATED KARAOKE TEMPLATE WITH MP4 DOWNLOAD AND PROPER DURATION
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1986,7 +1988,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   async function ensureAudioContext() {
       if (!audioContext) {
           audioContext = new (window.AudioContext || window.webkitAudioContext)({
-              sampleRate: 44100,
+              sampleRate: 48000,
               latencyHint: 'playback'
           });
       }
@@ -2053,7 +2055,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: HIGH QUALITY RECORDING WITH OPTIMIZED VOICE SETTINGS ================== */
+  /* ================== FIXED: HIGH QUALITY RECORDING WITH MP4 FORMAT ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2085,16 +2087,16 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               console.log("Original song play error:", e);
           });
           
-          // ✅ OPTIMIZED: Get microphone with CLEAR VOICE settings
+          // Get microphone with IMPROVED settings for voice clarity
           micStream = await navigator.mediaDevices.getUserMedia({
               audio: {
-                  echoCancellation: true,      // ✅ Keep echo cancellation
-                  noiseSuppression: true,      // ✅ Keep noise suppression
-                  autoGainControl: false,      // ❌ DISABLE auto gain control (causes distortion)
-                  channelCount: 1,            // Mono for voice clarity
-                  sampleRate: 44100,          // Standard CD quality
-                  sampleSize: 16,             // Standard bit depth
-                  latency: 0                  // Minimum latency
+                  echoCancellation: true,      // Reduce echo
+                  noiseSuppression: true,      // Reduce background noise
+                  autoGainControl: false,      // Disable auto gain for better control
+                  channelCount: 1,            // Mono for voice
+                  sampleRate: 48000,
+                  sampleSize: 24,
+                  latency: 0.01
               },
               video: false
           }).catch(err => {
@@ -2122,12 +2124,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           const songDuration = actualDuration * 1000;
           console.log("✅ Recording will last:", songDuration, "ms");
           
-          // ✅ OPTIMIZED: Create gain nodes with CLEAR VOICE settings
+          // Create gain nodes with OPTIMAL settings
           micGain = audioCtx.createGain();
-          micGain.gain.value = 1.5;  // Optimal for voice clarity (not too high)
+          micGain.gain.value = 1.8;  // Optimal for voice clarity
           
           accGain = audioCtx.createGain();
-          accGain.gain.value = 0.25;  // Lower accompaniment volume for clear voice
+          accGain.gain.value = 0.3;  // Lower accompaniment volume
           
           // Create destination for recording
           destination = audioCtx.createMediaStreamDestination();
@@ -2145,7 +2147,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accSource.start();
           
           // Create stream from canvas
-          const canvasStream = canvas.captureStream(30);
+          const canvasStream = canvas.captureStream(30); // Lower frame rate for stability
           const mixedAudioStream = destination.stream;
           
           // Combine video and audio streams
@@ -2154,7 +2156,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ Use MP4 format for compatible downloads
+          // ✅ FIXED: USE MP4 FORMAT FOR COMPATIBLE DOWNLOADS
           let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp9,opus';
@@ -2166,10 +2168,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // Create MediaRecorder with optimized settings
+          // Create MediaRecorder with OPTIMAL settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 192000,    // ✅ Higher bitrate for voice clarity
+              audioBitsPerSecond: 256000,    // High quality audio
               videoBitsPerSecond: 5000000,   // High quality video
               videoKeyFrameInterval: 30      // Keyframe every 30 frames
           });
@@ -2206,12 +2208,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   finalBg.src = mainBg.src;
                   finalDiv.style.display = "flex";
                   
-                  // Show actual recording duration
+                  // ✅ FIXED: Show actual recording duration
                   const minutes = Math.floor(recordingDuration / 60);
                   const seconds = Math.floor(recordingDuration % 60);
                   finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
                   
-                  // Set download link with MP4 extension
+                  // ✅ FIXED: Set download link with MP4 extension and proper metadata
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
                   
                   // Determine file extension based on mimeType
@@ -2241,6 +2243,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                       // If duration is 0, try to set it from recordingDuration
                       if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
                           console.log('Fixing duration metadata...');
+                          // Create a new blob with proper metadata by downloading and re-encoding
                           fixVideoDuration(url, recordingDuration).then(fixedUrl => {
                               if (fixedUrl) {
                                   downloadRecordingBtn.href = fixedUrl;
@@ -2323,6 +2326,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           });
           
           // For MP4 files, we can't easily fix in browser
+          // But we can at least provide the correct file
           return videoUrl;
           
       } catch (error) {
@@ -2556,3 +2560,6 @@ else:
         st.session_state.page = "Login"
     save_session_to_db()
     st.rerun()
+
+
+fast ga send chey based on my code
