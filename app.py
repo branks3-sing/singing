@@ -14,13 +14,18 @@ from io import BytesIO
 import subprocess
 import tempfile
 import numpy as np
+st.components.v1.html("""
+<script>
+const meta = document.createElement('meta');
+meta.name = "google-adsense-account";
+meta.content = "ca-pub-2373888797323762";
+document.head.appendChild(meta);
+</script>
 
-# =============== ADD GOOGLE ADSENSE VERIFICATION CODE ===============
-st.markdown("""
-<meta name="google-adsense-account" content="ca-pub-2373888797323762">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2373888797323762"
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"
      crossorigin="anonymous"></script>
-""", unsafe_allow_html=True)
+""", height=0)
+
 
 # =============== RESPONSIVE FIXES ===============
 st.markdown("""
