@@ -1648,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED PLAYBACK ISSUE ===============
+# =============== SONG PLAYER WITH FIXED ISSUES ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1777,7 +1777,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ FIXED: Recording playback in same interface with stop button
+    # ✅ FIXED KARAOKE TEMPLATE - PLAYBACK IN SAME INTERFACE
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1914,25 +1914,32 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   .audio-player {
       display: none;
   }
-  #playbackVideo {
+  /* Recording playback video */
+  #recordingVideoPlayer {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
-      height: 75%;
+      height: 100%;
       object-fit: contain;
-      z-index: 40;
+      background: #000;
       display: none;
+      z-index: 1000;
   }
-  .playback-controls {
+  /* Video controls overlay */
+  .video-controls {
       position: absolute;
-      bottom: 20%;
+      bottom: 10%;
       width: 100%;
       text-align: center;
-      z-index: 50;
+      z-index: 1001;
       display: flex;
       justify-content: center;
       gap: 10px;
+  }
+  .video-controls button {
+      background: rgba(0,0,0,0.7);
+      border: 1px solid rgba(255,255,255,0.3);
   }
   </style>
 </head>
@@ -1941,9 +1948,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       <img class="reel-bg" id="mainBg" src="data:image/jpeg;base64,%%LYRICS_B64%%" onerror="this.style.display='none'">
       <img id="logoImg" src="data:image/png;base64,%%LOGO_B64%%" onerror="this.style.display='none'">
       <div id="status">Ready 🎤 Tap screen first</div>
-      
-      <!-- Video for playback -->
-      <video id="playbackVideo" controls style="display:none;"></video>
       
       <!-- Audio elements - hidden -->
       <audio id="originalAudio" class="audio-player" preload="auto" data-src="data:audio/mp3;base64,%%ORIGINAL_B64%%"></audio>
@@ -1961,13 +1965,20 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       <img class="reel-bg" id="finalBg">
       <div id="finalStatus">Recording Complete!</div>
       <div class="controls">
-        <button id="playRecordingBtn">▶ Play</button>
+        <button id="playRecordingBtn">▶ Play Recording</button>
         <a id="downloadRecordingBtn" href="#" download>
           <button>⬇ Download</button>
         </a>
-        <button id="newRecordingBtn">New</button>
+        <button id="newRecordingBtn">New Recording</button>
       </div>
     </div>
+  </div>
+
+  <!-- Video player for recording playback -->
+  <video id="recordingVideoPlayer" controls></video>
+  <div class="video-controls" id="videoControls" style="display:none;">
+    <button onclick="closeVideoPlayer()">Close</button>
+    <button onclick="toggleFullscreen()">Fullscreen</button>
   </div>
 
   <canvas id="recordingCanvas"></canvas>
@@ -1976,6 +1987,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   /* ================== GLOBAL STATE ================== */
   let mediaRecorder;
   let recordedChunks = [];
+  let playRecordingAudio = null;
   let lastRecordingURL = null;
   let audioContext, micSource, accSource, micGain, accGain, destination, originalSource;
   let canvasRafId = null;
@@ -1988,7 +2000,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let recordingDuration = 0;
   let originalAudioBuffer = null;
   let accompanimentBuffer = null;
-  let playbackVideo = null;
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -2008,7 +2019,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   const ctx = canvas.getContext("2d");
   const logoImg = new Image();
   logoImg.src = document.getElementById("logoImg").src;
-  playbackVideo = document.getElementById("playbackVideo");
+  const recordingVideoPlayer = document.getElementById("recordingVideoPlayer");
+  const videoControls = document.getElementById("videoControls");
 
   /* ================== CANVAS SETUP ================== */
   canvas.width = 720;
@@ -2289,59 +2301,35 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // ✅ FIXED: Play recording directly in same interface
+                  // ✅ FIXED: Play recording in same interface
                   playRecordingBtn.onclick = () => {
                       if (!isPlayingRecording) {
-                          // Hide background image
-                          finalBg.style.display = "none";
+                          // Show video player
+                          recordingVideoPlayer.src = url;
+                          recordingVideoPlayer.style.display = 'block';
+                          videoControls.style.display = 'flex';
                           
-                          // Setup and show playback video
-                          playbackVideo.src = url;
-                          playbackVideo.style.display = "block";
-                          playbackVideo.controls = true;
-                          playbackVideo.play();
+                          // Hide final output
+                          finalDiv.style.display = 'none';
+                          
+                          // Play the video
+                          recordingVideoPlayer.play();
                           
                           playRecordingBtn.innerText = "⏹ Stop";
                           isPlayingRecording = true;
                           
-                          // When video ends
-                          playbackVideo.onended = () => {
-                              stopPlayback();
-                          };
-                          
-                          // When video is paused
-                          playbackVideo.onpause = () => {
-                              if (isPlayingRecording) {
-                                  playRecordingBtn.innerText = "▶ Play";
-                                  isPlayingRecording = false;
-                              }
-                          };
-                          
-                          // When video starts playing
-                          playbackVideo.onplay = () => {
-                              playRecordingBtn.innerText = "⏹ Stop";
-                              isPlayingRecording = true;
+                          // Update button text when video ends
+                          recordingVideoPlayer.onended = () => {
+                              closeVideoPlayer();
+                              playRecordingBtn.innerText = "▶ Play Recording";
+                              isPlayingRecording = false;
                           };
                       } else {
-                          stopPlayback();
+                          closeVideoPlayer();
+                          playRecordingBtn.innerText = "▶ Play Recording";
+                          isPlayingRecording = false;
                       }
                   };
-                  
-                  // Helper function to stop playback
-                  function stopPlayback() {
-                      if (playbackVideo) {
-                          playbackVideo.pause();
-                          playbackVideo.currentTime = 0;
-                          playbackVideo.style.display = "none";
-                          playbackVideo.src = "";
-                      }
-                      
-                      // Show background image
-                      finalBg.style.display = "block";
-                      
-                      playRecordingBtn.innerText = "▶ Play";
-                      isPlayingRecording = false;
-                  }
               }
           };
           
@@ -2462,19 +2450,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
 
   /* ================== NEW RECORDING ================== */
   newRecordingBtn.onclick = function() {
-      // Stop any ongoing playback
-      if (playbackVideo) {
-          playbackVideo.pause();
-          playbackVideo.currentTime = 0;
-          playbackVideo.style.display = "none";
-          playbackVideo.src = "";
-      }
-      
-      // Hide final output
+      closeVideoPlayer();
       finalDiv.style.display = "none";
-      
-      // Show background image
-      finalBg.style.display = "block";
       
       // Reset audio
       if (isSongPlaying && originalSource) {
@@ -2503,10 +2480,36 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           URL.revokeObjectURL(lastRecordingURL);
           lastRecordingURL = null;
       }
-      
-      // Reset playback button
-      playRecordingBtn.innerText = "▶ Play";
   };
+
+  /* ================== VIDEO PLAYER FUNCTIONS ================== */
+  function closeVideoPlayer() {
+      if (recordingVideoPlayer) {
+          recordingVideoPlayer.pause();
+          recordingVideoPlayer.currentTime = 0;
+          recordingVideoPlayer.style.display = 'none';
+          videoControls.style.display = 'none';
+          recordingVideoPlayer.src = '';
+      }
+      finalDiv.style.display = 'flex';
+      playRecordingBtn.innerText = "▶ Play Recording";
+      isPlayingRecording = false;
+      
+      // Exit fullscreen if active
+      if (document.fullscreenElement) {
+          document.exitFullscreen();
+      }
+  }
+
+  function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+          recordingVideoPlayer.requestFullscreen().catch(err => {
+              console.log("Fullscreen error:", err);
+          });
+      } else {
+          document.exitFullscreen();
+      }
+  }
 
   /* ================== HELPER FUNCTIONS ================== */
   function resetUIOnError() {
@@ -2564,6 +2567,21 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           audioContext.close();
       }
       cleanupAudioSources();
+  });
+
+  /* ================== VIDEO PLAYER EVENT LISTENERS ================== */
+  recordingVideoPlayer.addEventListener('click', function() {
+      if (this.paused) {
+          this.play();
+      } else {
+          this.pause();
+      }
+  });
+
+  document.addEventListener('fullscreenchange', function() {
+      if (!document.fullscreenElement) {
+          videoControls.style.display = 'flex';
+      }
   });
   </script>
 </body>
