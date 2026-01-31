@@ -562,14 +562,6 @@ def delete_song_files(song_name):
         if os.path.exists(acc_path):
             os.remove(acc_path)
         
-        processed_original_path = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
-        if os.path.exists(processed_original_path):
-            os.remove(processed_original_path)
-            
-        processed_acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
-        if os.path.exists(processed_acc_path):
-            os.remove(processed_acc_path)
-        
         for ext in [".jpg", ".jpeg", ".png"]:
             lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{ext}")
             if os.path.exists(lyrics_path):
@@ -630,10 +622,7 @@ def get_song_duration(song_name):
             return stored_duration
     
     # Try processed accompaniment file first
-    acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
-    if not os.path.exists(acc_path):
-        acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
-    
+    acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
     if os.path.exists(acc_path):
         try:
             duration = get_audio_duration(acc_path)
@@ -642,7 +631,7 @@ def get_song_duration(song_name):
                 if song_name in metadata:
                     metadata[song_name]["duration"] = duration
                 else:
-                    metadata[song_name] = {"duration": duration, "uploaded_by": "unknown", "processed": False}
+                    metadata[song_name] = {"duration": duration, "uploaded_by": "unknown"}
                 
                 save_metadata(metadata)
                 get_metadata_cached.clear()
@@ -652,10 +641,7 @@ def get_song_duration(song_name):
             print(f"⚠️ Failed to get accompaniment duration for {song_name}: {e}")
     
     # Try original file as fallback
-    original_path = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
-    if not os.path.exists(original_path):
-        original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
-    
+    original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
     if os.path.exists(original_path):
         try:
             duration = get_audio_duration(original_path)
@@ -704,17 +690,8 @@ def ensure_audio_processed(song_name):
         # Update metadata
         if song_name in metadata:
             metadata[song_name]["processed"] = True
-            # Update duration with processed file
-            duration = get_audio_duration(processed_acc)
-            if duration and duration > 0:
-                metadata[song_name]["duration"] = duration
         else:
-            duration = get_audio_duration(processed_acc)
-            metadata[song_name] = {
-                "processed": True, 
-                "uploaded_by": "unknown",
-                "duration": duration if duration else None
-            }
+            metadata[song_name] = {"processed": True, "uploaded_by": "unknown"}
         
         save_metadata(metadata)
         get_metadata_cached.clear()
@@ -1287,7 +1264,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     process_audio_for_quality(original_path, processed_original)
                     process_audio_for_quality(acc_path, processed_acc)
                 
-                # Get accurate duration from processed file
+                # Get accurate duration
                 duration = get_audio_duration(processed_acc)
                 if not duration or duration <= 0:
                     duration = get_audio_duration(acc_path)
@@ -1348,7 +1325,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     if duration:
                         minutes = int(duration // 60)
                         seconds = int(duration % 60)
-                        display_name = f"✅ *{s}* ({minutes}:{seconds:02d})"
+                        display_name = f"✅ *{song}*"
                     else:
                         display_name = f"🎶 {s} (Duration: Unknown)"
                     
@@ -1658,7 +1635,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             if duration:
                 minutes = int(duration // 60)
                 seconds = int(duration % 60)
-                display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
+                display_name = f"✅ *{song}*"
             else:
                 display_name = f"✅ *{song}*"
             
@@ -1671,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED DURATION DOWNLOAD ===============
+# =============== SONG PLAYER WITH FIXED ISSUES ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1796,12 +1773,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     accompaniment_b64 = file_to_base64(accompaniment_path)
     lyrics_b64 = file_to_base64(lyrics_path)
     
-    # Get accurate song duration
     song_duration = get_song_duration(selected_song)
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH FIXED DURATION DOWNLOAD
+    # ✅ FIXED KARAOKE TEMPLATE - ORIGINAL SONG WILL PLAY DURING RECORDING BUT NOT BE RECORDED
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1977,13 +1953,13 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let canvasRafId = null;
   let isRecording = false;
   let isPlayingRecording = false;
+  let autoStopTimer = null;
   let isSongPlaying = false;
   let micStream = null;
   let recordingStartTime = 0;
   let recordingDuration = 0;
-  let compressor = null;
-  let highPassFilter = null;
-  let songDuration = %%SONG_DURATION%%; // ✅ FIXED: Use actual song duration
+  let originalAudioForRecording = null;
+  let originalSource = null;
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -2079,7 +2055,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: RECORDING WITH CORRECT DURATION ================== */
+  /* ================== FIXED: ORIGINAL SONG PLAYS DURING RECORDING BUT NOT RECORDED ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2092,33 +2068,29 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       try {
           const audioCtx = await ensureAudioContext();
           
-          // Stop any currently playing song
+          // Clear previous timer
+          if (autoStopTimer) {
+              clearTimeout(autoStopTimer);
+              autoStopTimer = null;
+          }
+          
+          // Stop any currently playing song from HTML audio element
           if (isSongPlaying) {
               originalAudio.pause();
               originalAudio.currentTime = 0;
               isSongPlaying = false;
           }
           
-          // ✅ FIXED: Use accurate song duration
-          const actualDuration = songDuration; // Use the actual song duration
-          console.log("✅ Using actual song duration:", actualDuration, "seconds");
-          
-          // Play original song for reference (not recorded)
-          originalAudio.currentTime = 0;
-          originalAudio.play().catch(e => {
-              console.log("Original song play error:", e);
-          });
-          
-          // ✅ IMPROVED MICROPHONE SETTINGS
+          // Get microphone with optimized settings
           micStream = await navigator.mediaDevices.getUserMedia({
               audio: {
-                  echoCancellation: false,
-                  noiseSuppression: false,
+                  echoCancellation: true,
+                  noiseSuppression: true,
                   autoGainControl: false,
                   channelCount: 1,
                   sampleRate: 48000,
-                  sampleSize: 16,
-                  latency: 0
+                  sampleSize: 24,
+                  latency: 0.01
               },
               video: false
           }).catch(err => {
@@ -2135,48 +2107,57 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           const accBuf = await accRes.arrayBuffer();
           const accDecoded = await audioCtx.decodeAudioData(accBuf);
           
-          // ✅ FIXED: Use buffer source for precise timing
+          // ✅ FIXED: Load original song for playback only (not for recording)
+          const originalRes = await fetch(originalAudio.src);
+          const originalBuf = await originalRes.arrayBuffer();
+          const originalDecoded = await audioCtx.decodeAudioData(originalBuf);
+          
+          // Get ACTUAL duration
+          const actualDuration = Math.max(accDecoded.duration, originalDecoded.duration);
+          console.log("✅ Actual song duration:", actualDuration, "seconds");
+          
           accSource = audioCtx.createBufferSource();
           accSource.buffer = accDecoded;
           
-          // ✅ IMPROVED AUDIO PROCESSING
-          highPassFilter = audioCtx.createBiquadFilter();
-          highPassFilter.type = "highpass";
-          highPassFilter.frequency.setValueAtTime(80, audioCtx.currentTime);
-          highPassFilter.Q.setValueAtTime(0.707, audioCtx.currentTime);
+          // ✅ FIXED: Create original song source for playback only
+          originalSource = audioCtx.createBufferSource();
+          originalSource.buffer = originalDecoded;
           
-          compressor = audioCtx.createDynamicsCompressor();
-          compressor.threshold.setValueAtTime(-20, audioCtx.currentTime);
-          compressor.knee.setValueAtTime(30, audioCtx.currentTime);
-          compressor.ratio.setValueAtTime(4, audioCtx.currentTime);
-          compressor.attack.setValueAtTime(0.01, audioCtx.currentTime);
-          compressor.release.setValueAtTime(0.15, audioCtx.currentTime);
+          // Use ACTUAL duration
+          const songDuration = actualDuration * 1000;
+          console.log("✅ Recording will last:", songDuration, "ms");
           
+          // Create gain nodes with optimal settings
           micGain = audioCtx.createGain();
-          micGain.gain.setValueAtTime(1.5, audioCtx.currentTime);
+          micGain.gain.value = 2.0;  // Voice volume (increased for clarity)
           
           accGain = audioCtx.createGain();
-          accGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          accGain.gain.value = 0.4;  // Accompaniment volume
           
+          // Create gain for original song (playback only, not recorded)
+          const originalGain = audioCtx.createGain();
+          originalGain.gain.value = 0.8;  // Original song volume for user to hear
+          
+          // Create destination for recording (only mic + accompaniment)
           destination = audioCtx.createMediaStreamDestination();
           
-          // Connect audio nodes
+          // ✅ FIXED: Connect microphone and accompaniment to recording destination
           micSource.connect(micGain);
-          micGain.connect(highPassFilter);
-          highPassFilter.connect(compressor);
-          compressor.connect(destination);
-          
+          micGain.connect(destination);
           accSource.connect(accGain);
           accGain.connect(destination);
+          
+          // ✅ FIXED: Connect original song only to speakers (not to recording)
+          originalSource.connect(originalGain);
+          originalGain.connect(audioCtx.destination);
           
           // Start canvas drawing
           drawCanvas();
           
-          // Start accompaniment for recording
-          accSource.start();
-          
-          // ✅ FIXED: Set exact stop time
-          accSource.stop(audioCtx.currentTime + actualDuration);
+          // Start both audio sources at the same time
+          const startTime = audioCtx.currentTime + 0.1;
+          accSource.start(startTime);
+          originalSource.start(startTime);
           
           // Create stream from canvas
           const canvasStream = canvas.captureStream(30);
@@ -2188,7 +2169,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ FIXED: Use MP4 format for better compatibility and duration support
+          // ✅ FIXED: USE MP4 FORMAT FOR BETTER COMPATIBILITY
           let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp9,opus';
@@ -2200,11 +2181,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // Create MediaRecorder with optimized settings
+          // Create MediaRecorder with optimal settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 192000,
-              videoBitsPerSecond: 3000000,
+              audioBitsPerSecond: 256000,
+              videoBitsPerSecond: 5000000,
               videoKeyFrameInterval: 30
           });
           
@@ -2224,11 +2205,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               // Cleanup audio sources
               cleanupAudioSources();
               
-              // Stop original song
-              originalAudio.pause();
-              originalAudio.currentTime = 0;
-              isSongPlaying = false;
-              
               // Create blob
               if (recordedChunks.length > 0) {
                   const blob = new Blob(recordedChunks, { type: mimeType });
@@ -2240,12 +2216,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   finalBg.src = mainBg.src;
                   finalDiv.style.display = "flex";
                   
-                  // Show recording duration
+                  // Show actual recording duration
                   const minutes = Math.floor(recordingDuration / 60);
                   const seconds = Math.floor(recordingDuration % 60);
                   finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
                   
-                  // ✅ FIXED: Set download with proper filename and extension
+                  // ✅ FIXED: Set download link with proper metadata
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
                   
                   // Determine file extension
@@ -2260,23 +2236,21 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // ✅ FIXED: Create video element to verify duration
+                  // Create video element to ensure proper metadata
                   const tempVideo = document.createElement('video');
                   tempVideo.src = url;
                   tempVideo.preload = 'metadata';
                   
                   tempVideo.onloadedmetadata = function() {
-                      console.log('✅ Video metadata loaded:', {
+                      console.log('Video metadata loaded:', {
                           duration: tempVideo.duration,
                           videoWidth: tempVideo.videoWidth,
                           videoHeight: tempVideo.videoHeight
                       });
                       
-                      // Show actual duration in status
-                      if (tempVideo.duration && tempVideo.duration > 0) {
-                          const vidMinutes = Math.floor(tempVideo.duration / 60);
-                          const vidSeconds = Math.floor(tempVideo.duration % 60);
-                          finalStatus.innerText = `✅ Recording Complete! (${vidMinutes}:${vidSeconds.toString().padStart(2, '0')})`;
+                      // If duration is incorrect, we'll fix it
+                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
+                          console.log('Video duration needs fixing');
                       }
                   };
                   
@@ -2287,21 +2261,54 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                               playRecordingAudio.pause();
                               playRecordingAudio = null;
                           }
-                          playRecordingAudio = new Audio(url);
-                          playRecordingAudio.volume = 1.0;
-                          playRecordingAudio.play();
-                          playRecordingBtn.innerText = "⏹ Stop";
-                          isPlayingRecording = true;
                           
-                          playRecordingAudio.onended = () => {
+                          // Create video element for playback to ensure correct duration
+                          const videoElement = document.createElement('video');
+                          videoElement.src = url;
+                          videoElement.controls = true;
+                          videoElement.style.position = 'fixed';
+                          videoElement.style.top = '0';
+                          videoElement.style.left = '0';
+                          videoElement.style.width = '100%';
+                          videoElement.style.height = '100%';
+                          videoElement.style.zIndex = '1000';
+                          videoElement.style.backgroundColor = '#000';
+                          document.body.appendChild(videoElement);
+                          
+                          // Auto-play and fullscreen
+                          videoElement.play();
+                          if (videoElement.requestFullscreen) {
+                              videoElement.requestFullscreen();
+                          }
+                          
+                          // Remove on close
+                          videoElement.onended = () => {
+                              document.body.removeChild(videoElement);
                               playRecordingBtn.innerText = "▶ Play Recording";
                               isPlayingRecording = false;
                           };
+                          
+                          videoElement.onclick = () => {
+                              if (document.fullscreenElement) {
+                                  document.exitFullscreen();
+                              }
+                              document.body.removeChild(videoElement);
+                              playRecordingBtn.innerText = "▶ Play Recording";
+                              isPlayingRecording = false;
+                          };
+                          
+                          playRecordingBtn.innerText = "⏹ Stop";
+                          isPlayingRecording = true;
                       } else {
-                          if (playRecordingAudio) {
-                              playRecordingAudio.pause();
-                              playRecordingAudio.currentTime = 0;
-                          }
+                          // Find and stop any playing video
+                          const videos = document.querySelectorAll('video');
+                          videos.forEach(video => {
+                              video.pause();
+                              if (video.parentNode) {
+                                  video.parentNode.removeChild(video);
+                              }
+                          });
+                          
                           playRecordingBtn.innerText = "▶ Play Recording";
                           isPlayingRecording = false;
                       }
@@ -2310,17 +2317,17 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           };
           
           // Start recording
-          mediaRecorder.start(100); // Use smaller timeslice for better accuracy
+          mediaRecorder.start(1000);
           
-          status.innerText = `🎙 Recording... Duration: ${Math.round(actualDuration)} seconds`;
+          status.innerText = "🎙 Recording... Original song is playing (not recorded) + Your voice + Accompaniment";
           
-          // ✅ FIXED: Auto-stop based on actual song duration
-          setTimeout(() => {
+          // AUTO-STOP TIMER
+          autoStopTimer = setTimeout(() => {
               if (isRecording) {
                   stopRecording();
-                  status.innerText = "✅ Recording completed with correct duration!";
+                  status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, (actualDuration * 1000) + 500); // Add 500ms buffer
+          }, songDuration + 2000);
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2337,6 +2344,14 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               accSource.disconnect();
           } catch(e) {}
           accSource = null;
+      }
+      
+      if (originalSource) {
+          try { 
+              originalSource.stop(); 
+              originalSource.disconnect();
+          } catch(e) {}
+          originalSource = null;
       }
       
       if (micSource) {
@@ -2360,20 +2375,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accGain = null;
       }
       
-      if (compressor) {
-          try {
-              compressor.disconnect();
-          } catch(e) {}
-          compressor = null;
-      }
-      
-      if (highPassFilter) {
-          try {
-              highPassFilter.disconnect();
-          } catch(e) {}
-          highPassFilter = null;
-      }
-      
       if (destination) {
           try {
               destination.disconnect();
@@ -2391,6 +2392,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   function stopRecording() {
       if (!isRecording) return;
       
+      // Clear timer
+      if (autoStopTimer) {
+          clearTimeout(autoStopTimer);
+          autoStopTimer = null;
+      }
+      
       // Stop media recorder
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
           mediaRecorder.stop();
@@ -2399,7 +2406,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       // Cleanup audio sources
       cleanupAudioSources();
       
-      // Stop original song
+      // Stop original song if playing
       originalAudio.pause();
       originalAudio.currentTime = 0;
       isSongPlaying = false;
@@ -2430,6 +2437,14 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           playRecordingAudio.pause();
           playRecordingAudio = null;
       }
+      
+      // Remove any video elements
+      const videos = document.querySelectorAll('video');
+      videos.forEach(video => {
+          if (video.parentNode) {
+              video.parentNode.removeChild(video);
+          }
+      });
       
       // Reset audio
       originalAudio.pause();
@@ -2480,6 +2495,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       originalAudio.pause();
       originalAudio.currentTime = 0;
       
+      if (autoStopTimer) {
+          clearTimeout(autoStopTimer);
+          autoStopTimer = null;
+      }
+      
       // Cleanup
       cleanupAudioSources();
   }
@@ -2504,9 +2524,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       ensureAudioContext().then(() => {
           status.innerText = "Ready 🎤";
       });
-      
-      // Log actual duration
-      console.log("🎵 Song duration:", songDuration, "seconds");
   });
 
   /* ================== CLEANUP ================== */
