@@ -168,125 +168,98 @@ os.makedirs(logo_dir, exist_ok=True)
 os.makedirs(shared_links_dir, exist_ok=True)
 
 # =============== IMPROVED ACCURATE AUDIO DURATION FUNCTIONS ===============
-def get_audio_duration_fixed(file_path):
-    """Get accurate audio duration - FIXED VERSION"""
+def get_audio_duration(file_path):
+    """Get accurate audio duration using multiple methods"""
     if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
         return None
     
-    file_size = os.path.getsize(file_path)
-    if file_size == 0:
-        print(f"❌ Empty file: {file_path}")
-        return None
+    methods_tried = []
     
-    # Method 1: Try mutagen first (most reliable for MP3)
-    try:
-        from mutagen.mp3 import MP3
-        try:
-            audio = MP3(file_path)
-            if hasattr(audio.info, 'length') and audio.info.length > 0:
-                duration = audio.info.length
-                print(f"✅ mutagen duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
-                return duration
-        except Exception as e:
-            print(f"⚠️ mutagen failed: {e}")
-    except ImportError:
-        print("⚠️ mutagen not installed")
-    
-    # Method 2: ffprobe (very accurate)
+    # Method 1: ffprobe (most accurate)
     try:
         cmd = [
-            'ffprobe', '-v', 'error',
-            '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1',
-            file_path
+            'ffprobe', '-v', 'error', '-show_entries', 
+            'format=duration', '-of', 
+            'default=noprint_wrappers=1:nokey=1', file_path
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             duration = float(result.stdout.strip())
             if duration > 0:
-                print(f"✅ ffprobe duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
+                print(f"✅ ffprobe duration for {os.path.basename(file_path)}: {duration}")
                 return duration
+        methods_tried.append("ffprobe")
     except Exception as e:
-        print(f"⚠️ ffprobe failed: {e}")
+        methods_tried.append(f"ffprobe failed: {str(e)[:50]}")
     
-    # Method 3: pydub
+    # Method 2: mutagen (if installed) - pure Python MP3 metadata
+    try:
+        from mutagen.mp3 import MP3
+        audio = MP3(file_path)
+        duration = audio.info.length
+        if duration > 0:
+            print(f"✅ mutagen duration for {os.path.basename(file_path)}: {duration}")
+            return duration
+        methods_tried.append("mutagen")
+    except Exception as e:
+        methods_tried.append(f"mutagen failed: {str(e)[:50]}")
+    
+    # Method 3: pydub (if installed)
     try:
         from pydub import AudioSegment
-        try:
-            audio = AudioSegment.from_file(file_path)
-            duration = len(audio) / 1000.0
-            if duration > 0:
-                print(f"✅ pydub duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
-                return duration
-        except Exception as e:
-            print(f"⚠️ pydub failed: {e}")
-    except ImportError:
-        print("⚠️ pydub not installed")
+        audio = AudioSegment.from_file(file_path)
+        duration = len(audio) / 1000.0
+        if duration > 0:
+            print(f"✅ pydub duration for {os.path.basename(file_path)}: {duration}")
+            return duration
+        methods_tried.append("pydub")
+    except Exception as e:
+        methods_tried.append(f"pydub failed: {str(e)[:50]}")
     
-    # Method 4: Wave for WAV files
-    if file_path.lower().endswith('.wav'):
-        try:
-            import wave
+    # Method 4: wave module for WAV files
+    try:
+        import wave
+        if file_path.lower().endswith('.wav'):
             with wave.open(file_path, 'rb') as wav_file:
                 frames = wav_file.getnframes()
                 rate = wav_file.getframerate()
                 duration = frames / float(rate)
                 if duration > 0:
-                    print(f"✅ wave duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
+                    print(f"✅ wave duration for {os.path.basename(file_path)}: {duration}")
                     return duration
-        except Exception as e:
-            print(f"⚠️ wave failed: {e}")
-    
-    # Method 5: File size estimation (last resort)
-    try:
-        # MP3 duration estimation: 1 MB ≈ 8 seconds at 128kbps
-        file_size_mb = file_size / (1024 * 1024)
-        estimated_duration = file_size_mb * 8  # Approximate seconds per MB
-        if estimated_duration > 0:
-            print(f"⚠️ Estimated duration (from file size) for {os.path.basename(file_path)}: {estimated_duration:.2f} seconds")
-            return estimated_duration
     except Exception as e:
-        print(f"⚠️ File size estimation failed: {e}")
+        methods_tried.append(f"wave failed: {str(e)[:50]}")
     
-    print(f"❌ All methods failed for {os.path.basename(file_path)}")
+    # Method 5: File size estimation for MP3 (last resort)
+    try:
+        if file_path.lower().endswith('.mp3'):
+            # More accurate estimation: 128kbps = 0.94 MB per minute
+            file_size = os.path.getsize(file_path)
+            # Convert bytes to bits: *8, convert kbps to bps: *1024
+            estimated_duration = (file_size * 8) / (128 * 1024)  # Convert to seconds
+            if estimated_duration > 0:
+                print(f"⚠️ Estimated duration for {os.path.basename(file_path)}: {estimated_duration}")
+                return estimated_duration
+    except Exception as e:
+        methods_tried.append(f"size estimation failed: {str(e)[:50]}")
+    
+    print(f"❌ All methods failed for {os.path.basename(file_path)}: {methods_tried}")
     return None
 
-def get_audio_duration(file_path):
-    """Wrapper for duration function with caching"""
-    if not os.path.exists(file_path):
-        return None
-    
-    try:
-        return get_audio_duration_fixed(file_path)
-    except Exception as e:
-        print(f"❌ Error getting duration for {file_path}: {e}")
-        return None
-
 def fix_audio_duration(input_path, output_path):
-    """Fix audio duration metadata using ffmpeg"""
+    """Fix audio duration metadata"""
     try:
-        # Use ffmpeg to copy and fix metadata
         cmd = [
             'ffmpeg', '-i', input_path,
-            '-c:a', 'copy',  # Copy audio codec
+            '-c', 'copy',
             '-map_metadata', '0',
-            '-y',  # Overwrite output file
+            '-y',
             output_path
         ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        if result.returncode == 0:
-            print(f"✅ Fixed duration for {os.path.basename(input_path)}")
-            return True
-        else:
-            print(f"⚠️ FFmpeg failed: {result.stderr[:100]}")
-            # Copy file as fallback
-            import shutil
-            shutil.copy2(input_path, output_path)
-            return True
+        subprocess.run(cmd, capture_output=True, timeout=15)
+        return True
     except Exception as e:
-        print(f"⚠️ Could not fix audio duration: {e}")
+        print(f"Warning: Could not fix audio duration: {e}")
         import shutil
         shutil.copy2(input_path, output_path)
         return True
@@ -295,41 +268,25 @@ def fix_audio_duration(input_path, output_path):
 def process_audio_for_quality(input_path, output_path):
     """Process audio for better quality and fix duration issues"""
     try:
-        # First get the original duration
-        original_duration = get_audio_duration(input_path)
-        
         # Use ffmpeg to process audio with optimal settings
         cmd = [
             'ffmpeg', '-i', input_path,
             '-c:a', 'libmp3lame',
-            '-q:a', '2',  # High quality (0-9, 0 is best, 2 is very high)
-            '-ar', '44100',  # Standard sample rate
-            '-b:a', '192k',  # Good bitrate
+            '-q:a', '0',  # Highest quality (0-9, 0 is best)
+            '-ar', '48000',  # High sample rate
+            '-b:a', '320k',  # High bitrate
             '-map_metadata', '0',
-            '-write_xing', '1',  # Enable Xing header for better duration
+            '-id3v2_version', '3',
+            '-write_xing', '0',  # Fix duration issues
             '-y',
             output_path
         ]
+        subprocess.run(cmd, capture_output=True, timeout=20)
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0:
-            # Verify duration after processing
-            processed_duration = get_audio_duration(output_path)
-            
-            if processed_duration and original_duration:
-                diff = abs(processed_duration - original_duration)
-                if diff < 2:  # Less than 2 seconds difference
-                    print(f"✅ Processed audio: {original_duration:.1f}s → {processed_duration:.1f}s")
-                else:
-                    print(f"⚠️ Duration changed: {original_duration:.1f}s → {processed_duration:.1f}s")
-            return True
-        else:
-            print(f"⚠️ Audio processing failed: {result.stderr[:100]}")
-            # Copy original as fallback
-            import shutil
-            shutil.copy2(input_path, output_path)
-            return True
+        # Verify duration after processing
+        duration = get_audio_duration(output_path)
+        print(f"✅ Processed audio duration: {duration} seconds")
+        return True
     except Exception as e:
         print(f"⚠️ Audio processing failed, using original: {e}")
         import shutil
@@ -343,20 +300,10 @@ def get_song_files_cached():
     if not os.path.exists(songs_dir):
         return songs
     
-    # First get all processed files
-    for f in os.listdir(songs_dir):
-        if f.endswith("_original_processed.mp3"):
-            song_name = f.replace("_original_processed.mp3", "")
-            if song_name not in songs:
-                songs.append(song_name)
-    
-    # Then get original files for songs without processed versions
     for f in os.listdir(songs_dir):
         if f.endswith("_original.mp3"):
             song_name = f.replace("_original.mp3", "")
-            if song_name not in songs:
-                songs.append(song_name)
-    
+            songs.append(song_name)
     return sorted(songs)
 
 @st.cache_data(ttl=5)
@@ -607,33 +554,23 @@ def get_uploaded_songs(show_unshared=False):
 
 def delete_song_files(song_name):
     try:
-        # Delete all possible file variants
-        files_to_delete = [
-            f"{song_name}_original.mp3",
-            f"{song_name}_accompaniment.mp3",
-            f"{song_name}_original_processed.mp3",
-            f"{song_name}_accompaniment_processed.mp3"
-        ]
+        original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
+        if os.path.exists(original_path):
+            os.remove(original_path)
         
-        for filename in files_to_delete:
-            filepath = os.path.join(songs_dir, filename)
-            if os.path.exists(filepath):
-                os.remove(filepath)
-                print(f"✅ Deleted: {filename}")
+        acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
+        if os.path.exists(acc_path):
+            os.remove(acc_path)
         
-        # Delete lyrics image
         for ext in [".jpg", ".jpeg", ".png"]:
             lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{ext}")
             if os.path.exists(lyrics_path):
                 os.remove(lyrics_path)
-                print(f"✅ Deleted lyrics: {lyrics_path}")
         
-        # Delete shared link
         shared_link_path = os.path.join(shared_links_dir, f"{song_name}.json")
         if os.path.exists(shared_link_path):
             os.remove(shared_link_path)
         
-        # Clear caches
         get_song_files_cached.clear()
         get_shared_links_cached.clear()
         get_metadata_cached.clear()
@@ -674,23 +611,21 @@ def process_query_params():
 
 # =============== IMPROVED GET ACCURATE AUDIO DURATION FOR SONG ===============
 def get_song_duration(song_name):
-    """Get accurate duration for a song - FIXED"""
-    print(f"🔍 Getting duration for: {song_name}")
-    
+    """Get accurate duration for a song"""
     metadata = get_metadata_cached()
     
     # Check if we have stored duration in metadata
     if song_name in metadata and "duration" in metadata[song_name]:
         stored_duration = metadata[song_name]["duration"]
         if stored_duration and stored_duration > 0:
-            print(f"✅ Using stored duration for {song_name}: {stored_duration:.1f}s")
+            print(f"✅ Using stored duration for {song_name}: {stored_duration}")
             return stored_duration
     
     # Try processed accompaniment file first
-    processed_acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
-    if os.path.exists(processed_acc_path):
+    acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
+    if os.path.exists(acc_path):
         try:
-            duration = get_audio_duration(processed_acc_path)
+            duration = get_audio_duration(acc_path)
             if duration and duration > 0:
                 # Store in metadata
                 if song_name in metadata:
@@ -700,77 +635,47 @@ def get_song_duration(song_name):
                 
                 save_metadata(metadata)
                 get_metadata_cached.clear()
-                print(f"✅ Processed acc duration for {song_name}: {duration:.1f}s")
+                print(f"✅ Calculated accompaniment duration for {song_name}: {duration}")
                 return duration
         except Exception as e:
-            print(f"⚠️ Failed to get processed acc duration for {song_name}: {e}")
+            print(f"⚠️ Failed to get accompaniment duration for {song_name}: {e}")
     
-    # Try original accompaniment file
-    original_acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
-    if os.path.exists(original_acc_path):
-        try:
-            duration = get_audio_duration(original_acc_path)
-            if duration and duration > 0:
-                print(f"✅ Original acc duration for {song_name}: {duration:.1f}s")
-                return duration
-        except Exception as e:
-            print(f"⚠️ Failed to get original acc duration for {song_name}: {e}")
-    
-    # Try processed original file
-    processed_original_path = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
-    if os.path.exists(processed_original_path):
-        try:
-            duration = get_audio_duration(processed_original_path)
-            if duration and duration > 0:
-                print(f"✅ Processed original duration for {song_name}: {duration:.1f}s")
-                return duration
-        except Exception as e:
-            print(f"⚠️ Failed to get processed original duration for {song_name}: {e}")
-    
-    # Try original file
+    # Try original file as fallback
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
     if os.path.exists(original_path):
         try:
             duration = get_audio_duration(original_path)
             if duration and duration > 0:
-                print(f"✅ Original duration for {song_name}: {duration:.1f}s")
+                print(f"✅ Calculated original duration for {song_name}: {duration}")
                 return duration
         except Exception as e:
             print(f"⚠️ Failed to get original duration for {song_name}: {e}")
     
-    # If we can't determine duration, use file size estimation
-    for path in [processed_acc_path, original_acc_path, processed_original_path, original_path]:
-        if os.path.exists(path):
-            try:
-                file_size = os.path.getsize(path)
-                # Better estimation: MP3 at 128kbps
-                estimated_duration = (file_size * 8) / (128 * 1024)
-                if estimated_duration > 30:  # Only use if reasonable
-                    print(f"⚠️ Estimated duration from file size for {song_name}: {estimated_duration:.1f}s")
-                    return estimated_duration
-            except Exception as e:
-                print(f"⚠️ File size estimation failed for {path}: {e}")
+    # If we can't determine duration, try to estimate from file size
+    if os.path.exists(acc_path):
+        try:
+            file_size = os.path.getsize(acc_path)
+            # Better estimation: MP3 at 128kbps
+            estimated_duration = (file_size * 8) / (128 * 1024)
+            if estimated_duration > 30:
+                print(f"⚠️ Estimated duration from file size for {song_name}: {estimated_duration}")
+                return estimated_duration
+        except:
+            pass
     
     # Return reasonable default
-    print(f"⚠️ Using default duration (180s) for {song_name}")
+    print(f"⚠️ Using default duration for {song_name}")
     return 180
 
 def ensure_audio_processed(song_name):
-    """Ensure audio files are processed for high quality and correct duration"""
-    print(f"🔄 Ensuring audio processed for: {song_name}")
-    
+    """Ensure audio files are processed for high quality"""
     metadata = get_metadata_cached()
     
     if song_name in metadata and metadata[song_name].get("processed", False):
-        print(f"✅ Audio already processed for {song_name}")
         return True
     
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
     acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
-    
-    if not os.path.exists(original_path) or not os.path.exists(acc_path):
-        print(f"❌ Missing audio files for {song_name}")
-        return False
     
     # Create processed versions
     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
@@ -779,46 +684,18 @@ def ensure_audio_processed(song_name):
     try:
         # Process both files
         print(f"🔧 Processing audio for {song_name}...")
-        
-        # Get original duration before processing
-        original_duration = get_audio_duration(original_path)
-        acc_duration = get_audio_duration(acc_path)
-        
-        # Process files
         process_audio_for_quality(original_path, processed_original)
         process_audio_for_quality(acc_path, processed_acc)
         
-        # Verify durations after processing
-        processed_original_duration = get_audio_duration(processed_original)
-        processed_acc_duration = get_audio_duration(processed_acc)
-        
-        # Use the most reliable duration
-        if processed_acc_duration and processed_acc_duration > 0:
-            final_duration = processed_acc_duration
-        elif acc_duration and acc_duration > 0:
-            final_duration = acc_duration
-        elif processed_original_duration and processed_original_duration > 0:
-            final_duration = processed_original_duration
-        else:
-            final_duration = original_duration or 180
-        
         # Update metadata
         if song_name in metadata:
-            metadata[song_name]["duration"] = final_duration
             metadata[song_name]["processed"] = True
         else:
-            metadata[song_name] = {
-                "duration": final_duration,
-                "processed": True,
-                "uploaded_by": "unknown"
-            }
+            metadata[song_name] = {"processed": True, "uploaded_by": "unknown"}
         
         save_metadata(metadata)
         get_metadata_cached.clear()
-        
-        minutes = int(final_duration // 60)
-        seconds = int(final_duration % 60)
-        print(f"✅ Audio processed for {song_name}: {minutes}:{seconds:02d}")
+        print(f"✅ Audio processed for {song_name}")
         return True
     except Exception as e:
         print(f"⚠️ Audio processing failed for {song_name}: {e}")
@@ -1363,8 +1240,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 st.error("❌ Please upload all required files")
             else:
                 song_name = song_name_input.strip()
-                
-                # Save original files
+
                 original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
                 acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
                 lyrics_ext = os.path.splitext(uploaded_lyrics_image.name)[1]
@@ -1385,11 +1261,10 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
                     processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
                     
-                    # Process files
                     process_audio_for_quality(original_path, processed_original)
                     process_audio_for_quality(acc_path, processed_acc)
                 
-                # Get accurate duration from processed file
+                # Get accurate duration
                 duration = get_audio_duration(processed_acc)
                 if not duration or duration <= 0:
                     duration = get_audio_duration(acc_path)
@@ -1441,46 +1316,46 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs uploaded yet.")
         else:
-            for idx, song in enumerate(uploaded_songs):
+            for idx, s in enumerate(uploaded_songs):
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # Get duration for display
-                    duration = get_song_duration(song)
+                    # Display song name 
+                    duration = get_song_duration(s)
                     if duration:
                         minutes = int(duration // 60)
                         seconds = int(duration % 60)
-                        display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
+                        display_name = f"✅ *{song}*"
                     else:
-                        display_name = f"✅ *{song}* (Duration: Unknown)"
+                        display_name = f"🎶 {s} (Duration: Unknown)"
                     
                     if st.button(
                         display_name,
-                        key=f"song_name_{song}_{idx}",
+                        key=f"song_name_{s}_{idx}",
                         help="Click to play song",
                         use_container_width=True,
                         type="secondary"
                     ):
-                        open_song_player(song)
+                        open_song_player(s)
                 
                 with col2:
-                    safe_s = quote(song)
+                    safe_s = quote(s)
                     share_url = f"{APP_URL}?song={safe_s}"
                     if st.button(
                         "🔗",
-                        key=f"share_icon_{song}_{idx}",
+                        key=f"share_icon_{s}_{idx}",
                         help="Share link"
                     ):
-                        st.markdown(f"**Share URL:** {share_url}")
+                        st.markdown(f"Share URL: {share_url}")
                         st.info("Link copied to clipboard!")
                 
                 with col3:
                     if st.button(
                         "🗑️",
-                        key=f"delete_{song}_{idx}",
+                        key=f"delete_{s}_{idx}",
                         help="Delete song"
                     ):
-                        st.session_state.confirm_delete = song
+                        st.session_state.confirm_delete = s
                         st.rerun()
             
             if st.session_state.confirm_delete:
@@ -1543,15 +1418,7 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     safe_song = quote(song)
                     is_shared = song in shared_links_data
                     status = "✅ SHARED" if is_shared else "❌ NOT SHARED"
-                    # Add duration info
-                    duration = get_song_duration(song)
-                    if duration:
-                        minutes = int(duration // 60)
-                        seconds = int(duration % 60)
-                        duration_text = f" ({minutes}:{seconds:02d})"
-                    else:
-                        duration_text = ""
-                    st.write(f"**{song}**{duration_text} - {status}")
+                    st.write(f"**{song}** - {status}")
                 
                 with col2:
                     col_toggle, col_action = st.columns(2)
@@ -1596,39 +1463,23 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                             """, unsafe_allow_html=True)
 
     elif page_sidebar == "Process Audio":
-        st.header("🔧 Process Audio for Quality & Fix Duration")
+        st.header("🔧 Process Audio for Quality")
         st.info("This will re-process all audio files for better quality and fix duration issues.")
         
         if st.button("🔄 Process All Audio Files", key="process_all_audio"):
             all_songs = get_song_files_cached()
-            if not all_songs:
-                st.warning("No songs to process")
-                st.stop()
-            
             progress_bar = st.progress(0)
             status_text = st.empty()
-            results = []
             
             for idx, song in enumerate(all_songs):
                 status_text.text(f"Processing {song}...")
-                success = ensure_audio_processed(song)
-                results.append((song, success))
+                ensure_audio_processed(song)
                 progress_bar.progress((idx + 1) / len(all_songs))
             
             status_text.text("✅ All audio files processed!")
-            
-            # Show results
-            success_count = sum(1 for _, success in results if success)
-            if success_count == len(results):
-                st.success(f"✅ All {len(results)} songs processed successfully!")
-            else:
-                st.warning(f"⚠️ Processed {success_count}/{len(results)} songs successfully")
-                for song, success in results:
-                    if not success:
-                        st.error(f"❌ Failed to process: {song}")
-            
+            st.success("Audio processing completed successfully!")
             get_metadata_cached.clear()
-            time.sleep(2)
+            time.sleep(1)
             st.rerun()
 
     if st.sidebar.button("Logout", key="admin_logout"):
@@ -1784,7 +1635,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             if duration:
                 minutes = int(duration // 60)
                 seconds = int(duration % 60)
-                display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
+                display_name = f"✅ *{song}*"
             else:
                 display_name = f"✅ *{song}*"
             
@@ -1797,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED VOICE RECORDING CLARITY ===============
+# =============== SONG PLAYER WITH FIXED ISSUES ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1903,17 +1754,13 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     # Use processed files if available, otherwise use original
     if os.path.exists(processed_original_path):
         original_path = processed_original_path
-        print(f"✅ Using processed original: {selected_song}")
     else:
         original_path = os.path.join(songs_dir, f"{selected_song}_original.mp3")
-        print(f"⚠️ Using original (not processed): {selected_song}")
     
     if os.path.exists(processed_accompaniment_path):
         accompaniment_path = processed_accompaniment_path
-        print(f"✅ Using processed accompaniment: {selected_song}")
     else:
         accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment.mp3")
-        print(f"⚠️ Using accompaniment (not processed): {selected_song}")
 
     lyrics_path = ""
     for ext in [".jpg", ".jpeg", ".png"]:
@@ -1929,12 +1776,8 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     song_duration = get_song_duration(selected_song)
     if not song_duration or song_duration <= 0:
         song_duration = 180
-    
-    minutes = int(song_duration // 60)
-    seconds = int(song_duration % 60)
-    print(f"🎵 Song Duration for {selected_song}: {minutes}:{seconds:02d}")
 
-    # ✅ UPDATED KARAOKE TEMPLATE WITH IMPROVED VOICE RECORDING CLARITY
+    # ✅ FIXED: Original song plays during recording but NOT recorded
     karaoke_template = """
 <!doctype html>
 <html>
@@ -2075,7 +1918,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       <img class="reel-bg" id="mainBg" src="data:image/jpeg;base64,%%LYRICS_B64%%" onerror="this.style.display='none'">
       <img id="logoImg" src="data:image/png;base64,%%LOGO_B64%%" onerror="this.style.display='none'">
       <div id="status">Ready 🎤 Tap screen first</div>
-      <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%" preload="auto"></audio>
+      <audio id="originalAudio" src="data:audio/mp3;base64,%%ORIGINAL_B64%%" preload="auto" loop></audio>
       <audio id="accompaniment" src="data:audio/mp3;base64,%%ACCOMP_B64%%" preload="auto"></audio>
       <div class="controls">
         <button id="playBtn">▶ Play Song</button>
@@ -2115,8 +1958,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let micStream = null;
   let recordingStartTime = 0;
   let recordingDuration = 0;
-  let compressor = null;
-  let highPassFilter = null;
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -2212,7 +2053,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       canvasRafId = requestAnimationFrame(drawCanvas);
   }
 
-  /* ================== FIXED: IMPROVED VOICE RECORDING CLARITY ================== */
+  /* ================== FIXED: ORIGINAL SONG PLAYS BUT NOT RECORDED ================== */
   recordBtn.onclick = async function() {
       if (isRecording) return;
       
@@ -2231,29 +2072,21 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               autoStopTimer = null;
           }
           
-          // Stop any currently playing song
-          if (isSongPlaying) {
-              originalAudio.pause();
-              originalAudio.currentTime = 0;
-              isSongPlaying = false;
-          }
-          
-          // Play original song for reference (not recorded)
+          // ✅ FIX: START ORIGINAL SONG FOR REFERENCE
           originalAudio.currentTime = 0;
-          originalAudio.play().catch(e => {
-              console.log("Original song play error:", e);
-          });
+          await originalAudio.play();
+          isSongPlaying = true;
           
-          // ✅ IMPROVED MICROPHONE SETTINGS FOR CLEAR VOICE RECORDING
+          // Get microphone with optimized settings
           micStream = await navigator.mediaDevices.getUserMedia({
               audio: {
-                  echoCancellation: false,       // Turn off for better voice quality
-                  noiseSuppression: false,       // Turn off to prevent voice distortion
-                  autoGainControl: false,        // Turn off for consistent volume
-                  channelCount: 1,               // Mono for voice clarity
-                  sampleRate: 48000,            // High sample rate
-                  sampleSize: 16,               // 16-bit for clarity
-                  latency: 0                     // Low latency
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: false,
+                  channelCount: 1,
+                  sampleRate: 48000,
+                  sampleSize: 24,
+                  latency: 0.01
               },
               video: false
           }).catch(err => {
@@ -2270,47 +2103,31 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           const accBuf = await accRes.arrayBuffer();
           const accDecoded = await audioCtx.decodeAudioData(accBuf);
           
-          // Get ACTUAL duration - USING FIXED DURATION FROM BACKEND
-          const actualDuration = %%SONG_DURATION%%;  // Fixed: Using actual song duration
-          console.log("✅ Fixed accompaniment duration from backend:", actualDuration, "seconds");
+          // Get ACTUAL duration
+          const actualDuration = accDecoded.duration;
+          console.log("✅ Actual accompaniment duration:", actualDuration, "seconds");
           
           accSource = audioCtx.createBufferSource();
           accSource.buffer = accDecoded;
           
-          // ✅ IMPROVED AUDIO PROCESSING FOR VOICE CLARITY
+          // Use ACTUAL duration
+          const songDuration = actualDuration * 1000;
+          console.log("✅ Recording will last:", songDuration, "ms");
           
-          // 1. Create high-pass filter to remove low-frequency rumble (50Hz)
-          highPassFilter = audioCtx.createBiquadFilter();
-          highPassFilter.type = "highpass";
-          highPassFilter.frequency.setValueAtTime(80, audioCtx.currentTime);
-          highPassFilter.Q.setValueAtTime(0.707, audioCtx.currentTime);
-          
-          // 2. Create compressor for consistent voice volume
-          compressor = audioCtx.createDynamicsCompressor();
-          compressor.threshold.setValueAtTime(-20, audioCtx.currentTime); // Louder threshold
-          compressor.knee.setValueAtTime(30, audioCtx.currentTime);       // Smooth knee
-          compressor.ratio.setValueAtTime(4, audioCtx.currentTime);       // Moderate compression
-          compressor.attack.setValueAtTime(0.01, audioCtx.currentTime);   // Fast attack
-          compressor.release.setValueAtTime(0.15, audioCtx.currentTime);  // Medium release
-          
-          // 3. Create gain nodes with optimized settings
+          // Create gain nodes with optimal settings
           micGain = audioCtx.createGain();
-          micGain.gain.setValueAtTime(1.5, audioCtx.currentTime);  // Good starting gain
+          micGain.gain.value = 1.8;  // Voice volume
           
           accGain = audioCtx.createGain();
-          accGain.gain.setValueAtTime(0.15, audioCtx.currentTime); // Lower accompaniment for clear voice
+          accGain.gain.value = 0.3;  // Lower accompaniment volume
           
           // Create destination for recording
           destination = audioCtx.createMediaStreamDestination();
           
-          // ✅ IMPROVED AUDIO CONNECTION CHAIN FOR CLEAR VOICE
-          // Microphone chain: Source → Gain → HighPass → Compressor → Destination
+          // ✅ IMPORTANT: Connect ONLY microphone and accompaniment
+          // Original song plays separately but NOT connected to destination
           micSource.connect(micGain);
-          micGain.connect(highPassFilter);
-          highPassFilter.connect(compressor);
-          compressor.connect(destination);
-          
-          // Accompaniment: Source → Gain → Destination
+          micGain.connect(destination);
           accSource.connect(accGain);
           accGain.connect(destination);
           
@@ -2330,8 +2147,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               ...mixedAudioStream.getAudioTracks()
           ]);
           
-          // ✅ IMPROVED MEDIA RECORDER SETTINGS
-          let mimeType = 'video/webm;codecs=vp9,opus';  // Better audio codec
+          // ✅ FIXED: USE MP4 FORMAT FOR BETTER COMPATIBILITY
+          let mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+              mimeType = 'video/webm;codecs=vp9,opus';
+          }
           if (!MediaRecorder.isTypeSupported(mimeType)) {
               mimeType = 'video/webm;codecs=vp8,opus';
           }
@@ -2339,12 +2159,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               mimeType = 'video/webm';
           }
           
-          // Create MediaRecorder with HIGH QUALITY audio settings
+          // Create MediaRecorder with optimal settings
           mediaRecorder = new MediaRecorder(combinedStream, {
               mimeType: mimeType,
-              audioBitsPerSecond: 192000,    // Higher bitrate for better voice quality
-              videoBitsPerSecond: 3000000,   // Lower video bitrate to prioritize audio
-              videoKeyFrameInterval: 60      // Less frequent keyframes
+              audioBitsPerSecond: 256000,
+              videoBitsPerSecond: 5000000,
+              videoKeyFrameInterval: 30
           });
           
           recordedChunks = [];
@@ -2360,13 +2180,13 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               cancelAnimationFrame(canvasRafId);
               recordingDuration = (Date.now() - recordingStartTime) / 1000;
               
-              // Cleanup audio sources
-              cleanupAudioSources();
-              
               // Stop original song
               originalAudio.pause();
               originalAudio.currentTime = 0;
               isSongPlaying = false;
+              
+              // Cleanup audio sources
+              cleanupAudioSources();
               
               // Create blob
               if (recordedChunks.length > 0) {
@@ -2384,7 +2204,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   const seconds = Math.floor(recordingDuration % 60);
                   finalStatus.innerText = `✅ Recording Complete! (${minutes}:${seconds.toString().padStart(2, '0')})`;
                   
-                  // Set download link
+                  // ✅ FIXED: Set download link with proper metadata
                   const songName = "%%SONG_NAME%%".replace(/[^a-zA-Z0-9]/g, '_');
                   
                   // Determine file extension
@@ -2399,7 +2219,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // Create a video element to fix metadata
+                  // Create video element to ensure proper metadata
                   const tempVideo = document.createElement('video');
                   tempVideo.src = url;
                   tempVideo.preload = 'metadata';
@@ -2410,6 +2230,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                           videoWidth: tempVideo.videoWidth,
                           videoHeight: tempVideo.videoHeight
                       });
+                      
+                      // If duration is incorrect, we'll fix it
+                      if (tempVideo.duration === 0 || isNaN(tempVideo.duration)) {
+                          console.log('Video duration needs fixing');
+                      }
                   };
                   
                   // Playback button
@@ -2419,21 +2244,54 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                               playRecordingAudio.pause();
                               playRecordingAudio = null;
                           }
-                          playRecordingAudio = new Audio(url);
-                          playRecordingAudio.volume = 1.0;
-                          playRecordingAudio.play();
-                          playRecordingBtn.innerText = "⏹ Stop";
-                          isPlayingRecording = true;
                           
-                          playRecordingAudio.onended = () => {
+                          // Create video element for playback to ensure correct duration
+                          const videoElement = document.createElement('video');
+                          videoElement.src = url;
+                          videoElement.controls = true;
+                          videoElement.style.position = 'fixed';
+                          videoElement.style.top = '0';
+                          videoElement.style.left = '0';
+                          videoElement.style.width = '100%';
+                          videoElement.style.height = '100%';
+                          videoElement.style.zIndex = '1000';
+                          videoElement.style.backgroundColor = '#000';
+                          document.body.appendChild(videoElement);
+                          
+                          // Auto-play and fullscreen
+                          videoElement.play();
+                          if (videoElement.requestFullscreen) {
+                              videoElement.requestFullscreen();
+                          }
+                          
+                          // Remove on close
+                          videoElement.onended = () => {
+                              document.body.removeChild(videoElement);
                               playRecordingBtn.innerText = "▶ Play Recording";
                               isPlayingRecording = false;
                           };
+                          
+                          videoElement.onclick = () => {
+                              if (document.fullscreenElement) {
+                                  document.exitFullscreen();
+                              }
+                              document.body.removeChild(videoElement);
+                              playRecordingBtn.innerText = "▶ Play Recording";
+                              isPlayingRecording = false;
+                          };
+                          
+                          playRecordingBtn.innerText = "⏹ Stop";
+                          isPlayingRecording = true;
                       } else {
-                          if (playRecordingAudio) {
-                              playRecordingAudio.pause();
-                              playRecordingAudio.currentTime = 0;
-                          }
+                          // Find and stop any playing video
+                          const videos = document.querySelectorAll('video');
+                          videos.forEach(video => {
+                              video.pause();
+                              if (video.parentNode) {
+                                  video.parentNode.removeChild(video);
+                              }
+                          });
+                          
                           playRecordingBtn.innerText = "▶ Play Recording";
                           isPlayingRecording = false;
                       }
@@ -2441,18 +2299,18 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
               }
           };
           
-          // Start recording with larger timeslice for better audio chunks
-          mediaRecorder.start(500); // Collect data every 500ms for smoother recording
+          // Start recording
+          mediaRecorder.start(1000);
           
-          status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
+          status.innerText = "🎙 Recording... Original song playing (not recorded)";
           
-          // AUTO-STOP TIMER - USING FIXED DURATION
+          // AUTO-STOP TIMER
           autoStopTimer = setTimeout(() => {
               if (isRecording) {
                   stopRecording();
                   status.innerText = "✅ Auto-stopped: Recording complete!";
               }
-          }, (actualDuration * 1000) + 2000); // Add 2 seconds buffer
+          }, songDuration + 2000);
           
       } catch (error) {
           console.error("Recording error:", error);
@@ -2492,20 +2350,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           accGain = null;
       }
       
-      if (compressor) {
-          try {
-              compressor.disconnect();
-          } catch(e) {}
-          compressor = null;
-      }
-      
-      if (highPassFilter) {
-          try {
-              highPassFilter.disconnect();
-          } catch(e) {}
-          highPassFilter = null;
-      }
-      
       if (destination) {
           try {
               destination.disconnect();
@@ -2534,13 +2378,13 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           mediaRecorder.stop();
       }
       
-      // Cleanup audio sources
-      cleanupAudioSources();
-      
       // Stop original song
       originalAudio.pause();
       originalAudio.currentTime = 0;
       isSongPlaying = false;
+      
+      // Cleanup audio sources
+      cleanupAudioSources();
       
       // Stop canvas
       if (canvasRafId) {
@@ -2568,6 +2412,14 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           playRecordingAudio.pause();
           playRecordingAudio = null;
       }
+      
+      // Remove any video elements
+      const videos = document.querySelectorAll('video');
+      videos.forEach(video => {
+          if (video.parentNode) {
+              video.parentNode.removeChild(video);
+          }
+      });
       
       // Reset audio
       originalAudio.pause();
