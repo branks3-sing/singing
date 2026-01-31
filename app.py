@@ -1648,7 +1648,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             ):
                 open_song_player(song)
 
-# =============== SONG PLAYER WITH FIXED ISSUES ===============
+# =============== SONG PLAYER WITH FIXED PLAYBACK ISSUE ===============
 elif st.session_state.page == "Song Player" and st.session_state.get("selected_song"):
     save_session_to_db()
     
@@ -1777,7 +1777,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ FIXED KARAOKE TEMPLATE - ORIGINAL SONG PLAYS BUT NOT RECORDED
+    # ✅ FIXED: Recording playback in same interface with stop button
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1914,6 +1914,26 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   .audio-player {
       display: none;
   }
+  #playbackVideo {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 75%;
+      object-fit: contain;
+      z-index: 40;
+      display: none;
+  }
+  .playback-controls {
+      position: absolute;
+      bottom: 20%;
+      width: 100%;
+      text-align: center;
+      z-index: 50;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+  }
   </style>
 </head>
 <body>
@@ -1921,6 +1941,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       <img class="reel-bg" id="mainBg" src="data:image/jpeg;base64,%%LYRICS_B64%%" onerror="this.style.display='none'">
       <img id="logoImg" src="data:image/png;base64,%%LOGO_B64%%" onerror="this.style.display='none'">
       <div id="status">Ready 🎤 Tap screen first</div>
+      
+      <!-- Video for playback -->
+      <video id="playbackVideo" controls style="display:none;"></video>
       
       <!-- Audio elements - hidden -->
       <audio id="originalAudio" class="audio-player" preload="auto" data-src="data:audio/mp3;base64,%%ORIGINAL_B64%%"></audio>
@@ -1953,7 +1976,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   /* ================== GLOBAL STATE ================== */
   let mediaRecorder;
   let recordedChunks = [];
-  let playRecordingAudio = null;
   let lastRecordingURL = null;
   let audioContext, micSource, accSource, micGain, accGain, destination, originalSource;
   let canvasRafId = null;
@@ -1966,6 +1988,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   let recordingDuration = 0;
   let originalAudioBuffer = null;
   let accompanimentBuffer = null;
+  let playbackVideo = null;
 
   /* ================== ELEMENTS ================== */
   const playBtn = document.getElementById("playBtn");
@@ -1985,6 +2008,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   const ctx = canvas.getContext("2d");
   const logoImg = new Image();
   logoImg.src = document.getElementById("logoImg").src;
+  playbackVideo = document.getElementById("playbackVideo");
 
   /* ================== CANVAS SETUP ================== */
   canvas.width = 720;
@@ -2265,72 +2289,59 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // Create video element to ensure proper metadata
-                  const tempVideo = document.createElement('video');
-                  tempVideo.src = url;
-                  tempVideo.preload = 'metadata';
-                  
-                  tempVideo.onloadedmetadata = function() {
-                      console.log('Video metadata loaded:', {
-                          duration: tempVideo.duration,
-                          videoWidth: tempVideo.videoWidth,
-                          videoHeight: tempVideo.videoHeight
-                      });
-                  };
-                  
-                  // Playback button
+                  // ✅ FIXED: Play recording directly in same interface
                   playRecordingBtn.onclick = () => {
                       if (!isPlayingRecording) {
-                          if (playRecordingAudio) {
-                              playRecordingAudio.pause();
-                              playRecordingAudio = null;
-                          }
+                          // Hide background image
+                          finalBg.style.display = "none";
                           
-                          // Create video element for playback
-                          const videoElement = document.createElement('video');
-                          videoElement.src = url;
-                          videoElement.controls = true;
-                          videoElement.style.position = 'fixed';
-                          videoElement.style.top = '0';
-                          videoElement.style.left = '0';
-                          videoElement.style.width = '100%';
-                          videoElement.style.height = '100%';
-                          videoElement.style.zIndex = '1000';
-                          videoElement.style.backgroundColor = '#000';
-                          document.body.appendChild(videoElement);
-                          
-                          // Auto-play
-                          videoElement.play();
-                          
-                          // Remove on close
-                          videoElement.onended = () => {
-                              document.body.removeChild(videoElement);
-                              playRecordingBtn.innerText = "▶ Play Recording";
-                              isPlayingRecording = false;
-                          };
-                          
-                          videoElement.onclick = () => {
-                              document.body.removeChild(videoElement);
-                              playRecordingBtn.innerText = "▶ Play Recording";
-                              isPlayingRecording = false;
-                          };
+                          // Setup and show playback video
+                          playbackVideo.src = url;
+                          playbackVideo.style.display = "block";
+                          playbackVideo.controls = true;
+                          playbackVideo.play();
                           
                           playRecordingBtn.innerText = "⏹ Stop";
                           isPlayingRecording = true;
-                      } else {
-                          // Find and stop any playing video
-                          const videos = document.querySelectorAll('video');
-                          videos.forEach(video => {
-                              video.pause();
-                              if (video.parentNode) {
-                                  video.parentNode.removeChild(video);
-                              }
-                          });
                           
-                          playRecordingBtn.innerText = "▶ Play Recording";
-                          isPlayingRecording = false;
+                          // When video ends
+                          playbackVideo.onended = () => {
+                              stopPlayback();
+                          };
+                          
+                          // When video is paused
+                          playbackVideo.onpause = () => {
+                              if (isPlayingRecording) {
+                                  playRecordingBtn.innerText = "▶ Play";
+                                  isPlayingRecording = false;
+                              }
+                          };
+                          
+                          // When video starts playing
+                          playbackVideo.onplay = () => {
+                              playRecordingBtn.innerText = "⏹ Stop";
+                              isPlayingRecording = true;
+                          };
+                      } else {
+                          stopPlayback();
                       }
                   };
+                  
+                  // Helper function to stop playback
+                  function stopPlayback() {
+                      if (playbackVideo) {
+                          playbackVideo.pause();
+                          playbackVideo.currentTime = 0;
+                          playbackVideo.style.display = "none";
+                          playbackVideo.src = "";
+                      }
+                      
+                      // Show background image
+                      finalBg.style.display = "block";
+                      
+                      playRecordingBtn.innerText = "▶ Play";
+                      isPlayingRecording = false;
+                  }
               }
           };
           
@@ -2451,21 +2462,19 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
 
   /* ================== NEW RECORDING ================== */
   newRecordingBtn.onclick = function() {
-      finalDiv.style.display = "none";
-      
-      // Cleanup
-      if (playRecordingAudio) {
-          playRecordingAudio.pause();
-          playRecordingAudio = null;
+      // Stop any ongoing playback
+      if (playbackVideo) {
+          playbackVideo.pause();
+          playbackVideo.currentTime = 0;
+          playbackVideo.style.display = "none";
+          playbackVideo.src = "";
       }
       
-      // Remove any video elements
-      const videos = document.querySelectorAll('video');
-      videos.forEach(video => {
-          if (video.parentNode) {
-              video.parentNode.removeChild(video);
-          }
-      });
+      // Hide final output
+      finalDiv.style.display = "none";
+      
+      // Show background image
+      finalBg.style.display = "block";
       
       // Reset audio
       if (isSongPlaying && originalSource) {
@@ -2494,6 +2503,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           URL.revokeObjectURL(lastRecordingURL);
           lastRecordingURL = null;
       }
+      
+      // Reset playback button
+      playRecordingBtn.innerText = "▶ Play";
   };
 
   /* ================== HELPER FUNCTIONS ================== */
