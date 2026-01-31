@@ -168,98 +168,125 @@ os.makedirs(logo_dir, exist_ok=True)
 os.makedirs(shared_links_dir, exist_ok=True)
 
 # =============== IMPROVED ACCURATE AUDIO DURATION FUNCTIONS ===============
-def get_audio_duration(file_path):
-    """Get accurate audio duration using multiple methods"""
+def get_audio_duration_fixed(file_path):
+    """Get accurate audio duration - FIXED VERSION"""
     if not os.path.exists(file_path):
+        print(f"❌ File not found: {file_path}")
         return None
     
-    methods_tried = []
+    file_size = os.path.getsize(file_path)
+    if file_size == 0:
+        print(f"❌ Empty file: {file_path}")
+        return None
     
-    # Method 1: ffprobe (most accurate)
+    # Method 1: Try mutagen first (most reliable for MP3)
+    try:
+        from mutagen.mp3 import MP3
+        try:
+            audio = MP3(file_path)
+            if hasattr(audio.info, 'length') and audio.info.length > 0:
+                duration = audio.info.length
+                print(f"✅ mutagen duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
+                return duration
+        except Exception as e:
+            print(f"⚠️ mutagen failed: {e}")
+    except ImportError:
+        print("⚠️ mutagen not installed")
+    
+    # Method 2: ffprobe (very accurate)
     try:
         cmd = [
-            'ffprobe', '-v', 'error', '-show_entries', 
-            'format=duration', '-of', 
-            'default=noprint_wrappers=1:nokey=1', file_path
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            file_path
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             duration = float(result.stdout.strip())
             if duration > 0:
-                print(f"✅ ffprobe duration for {os.path.basename(file_path)}: {duration}")
+                print(f"✅ ffprobe duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
                 return duration
-        methods_tried.append("ffprobe")
     except Exception as e:
-        methods_tried.append(f"ffprobe failed: {str(e)[:50]}")
+        print(f"⚠️ ffprobe failed: {e}")
     
-    # Method 2: mutagen (if installed) - pure Python MP3 metadata
-    try:
-        from mutagen.mp3 import MP3
-        audio = MP3(file_path)
-        duration = audio.info.length
-        if duration > 0:
-            print(f"✅ mutagen duration for {os.path.basename(file_path)}: {duration}")
-            return duration
-        methods_tried.append("mutagen")
-    except Exception as e:
-        methods_tried.append(f"mutagen failed: {str(e)[:50]}")
-    
-    # Method 3: pydub (if installed)
+    # Method 3: pydub
     try:
         from pydub import AudioSegment
-        audio = AudioSegment.from_file(file_path)
-        duration = len(audio) / 1000.0
-        if duration > 0:
-            print(f"✅ pydub duration for {os.path.basename(file_path)}: {duration}")
-            return duration
-        methods_tried.append("pydub")
-    except Exception as e:
-        methods_tried.append(f"pydub failed: {str(e)[:50]}")
+        try:
+            audio = AudioSegment.from_file(file_path)
+            duration = len(audio) / 1000.0
+            if duration > 0:
+                print(f"✅ pydub duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
+                return duration
+        except Exception as e:
+            print(f"⚠️ pydub failed: {e}")
+    except ImportError:
+        print("⚠️ pydub not installed")
     
-    # Method 4: wave module for WAV files
-    try:
-        import wave
-        if file_path.lower().endswith('.wav'):
+    # Method 4: Wave for WAV files
+    if file_path.lower().endswith('.wav'):
+        try:
+            import wave
             with wave.open(file_path, 'rb') as wav_file:
                 frames = wav_file.getnframes()
                 rate = wav_file.getframerate()
                 duration = frames / float(rate)
                 if duration > 0:
-                    print(f"✅ wave duration for {os.path.basename(file_path)}: {duration}")
+                    print(f"✅ wave duration for {os.path.basename(file_path)}: {duration:.2f} seconds")
                     return duration
-    except Exception as e:
-        methods_tried.append(f"wave failed: {str(e)[:50]}")
+        except Exception as e:
+            print(f"⚠️ wave failed: {e}")
     
-    # Method 5: File size estimation for MP3 (last resort)
+    # Method 5: File size estimation (last resort)
     try:
-        if file_path.lower().endswith('.mp3'):
-            # More accurate estimation: 128kbps = 0.94 MB per minute
-            file_size = os.path.getsize(file_path)
-            # Convert bytes to bits: *8, convert kbps to bps: *1024
-            estimated_duration = (file_size * 8) / (128 * 1024)  # Convert to seconds
-            if estimated_duration > 0:
-                print(f"⚠️ Estimated duration for {os.path.basename(file_path)}: {estimated_duration}")
-                return estimated_duration
+        # MP3 duration estimation: 1 MB ≈ 8 seconds at 128kbps
+        file_size_mb = file_size / (1024 * 1024)
+        estimated_duration = file_size_mb * 8  # Approximate seconds per MB
+        if estimated_duration > 0:
+            print(f"⚠️ Estimated duration (from file size) for {os.path.basename(file_path)}: {estimated_duration:.2f} seconds")
+            return estimated_duration
     except Exception as e:
-        methods_tried.append(f"size estimation failed: {str(e)[:50]}")
+        print(f"⚠️ File size estimation failed: {e}")
     
-    print(f"❌ All methods failed for {os.path.basename(file_path)}: {methods_tried}")
+    print(f"❌ All methods failed for {os.path.basename(file_path)}")
     return None
 
-def fix_audio_duration(input_path, output_path):
-    """Fix audio duration metadata"""
+def get_audio_duration(file_path):
+    """Wrapper for duration function with caching"""
+    if not os.path.exists(file_path):
+        return None
+    
     try:
+        return get_audio_duration_fixed(file_path)
+    except Exception as e:
+        print(f"❌ Error getting duration for {file_path}: {e}")
+        return None
+
+def fix_audio_duration(input_path, output_path):
+    """Fix audio duration metadata using ffmpeg"""
+    try:
+        # Use ffmpeg to copy and fix metadata
         cmd = [
             'ffmpeg', '-i', input_path,
-            '-c', 'copy',
+            '-c:a', 'copy',  # Copy audio codec
             '-map_metadata', '0',
-            '-y',
+            '-y',  # Overwrite output file
             output_path
         ]
-        subprocess.run(cmd, capture_output=True, timeout=15)
-        return True
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        if result.returncode == 0:
+            print(f"✅ Fixed duration for {os.path.basename(input_path)}")
+            return True
+        else:
+            print(f"⚠️ FFmpeg failed: {result.stderr[:100]}")
+            # Copy file as fallback
+            import shutil
+            shutil.copy2(input_path, output_path)
+            return True
     except Exception as e:
-        print(f"Warning: Could not fix audio duration: {e}")
+        print(f"⚠️ Could not fix audio duration: {e}")
         import shutil
         shutil.copy2(input_path, output_path)
         return True
@@ -268,25 +295,41 @@ def fix_audio_duration(input_path, output_path):
 def process_audio_for_quality(input_path, output_path):
     """Process audio for better quality and fix duration issues"""
     try:
+        # First get the original duration
+        original_duration = get_audio_duration(input_path)
+        
         # Use ffmpeg to process audio with optimal settings
         cmd = [
             'ffmpeg', '-i', input_path,
             '-c:a', 'libmp3lame',
-            '-q:a', '0',  # Highest quality (0-9, 0 is best)
-            '-ar', '48000',  # High sample rate
-            '-b:a', '320k',  # High bitrate
+            '-q:a', '2',  # High quality (0-9, 0 is best, 2 is very high)
+            '-ar', '44100',  # Standard sample rate
+            '-b:a', '192k',  # Good bitrate
             '-map_metadata', '0',
-            '-id3v2_version', '3',
-            '-write_xing', '0',  # Fix duration issues
+            '-write_xing', '1',  # Enable Xing header for better duration
             '-y',
             output_path
         ]
-        subprocess.run(cmd, capture_output=True, timeout=20)
         
-        # Verify duration after processing
-        duration = get_audio_duration(output_path)
-        print(f"✅ Processed audio duration: {duration} seconds")
-        return True
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            # Verify duration after processing
+            processed_duration = get_audio_duration(output_path)
+            
+            if processed_duration and original_duration:
+                diff = abs(processed_duration - original_duration)
+                if diff < 2:  # Less than 2 seconds difference
+                    print(f"✅ Processed audio: {original_duration:.1f}s → {processed_duration:.1f}s")
+                else:
+                    print(f"⚠️ Duration changed: {original_duration:.1f}s → {processed_duration:.1f}s")
+            return True
+        else:
+            print(f"⚠️ Audio processing failed: {result.stderr[:100]}")
+            # Copy original as fallback
+            import shutil
+            shutil.copy2(input_path, output_path)
+            return True
     except Exception as e:
         print(f"⚠️ Audio processing failed, using original: {e}")
         import shutil
@@ -300,10 +343,20 @@ def get_song_files_cached():
     if not os.path.exists(songs_dir):
         return songs
     
+    # First get all processed files
+    for f in os.listdir(songs_dir):
+        if f.endswith("_original_processed.mp3"):
+            song_name = f.replace("_original_processed.mp3", "")
+            if song_name not in songs:
+                songs.append(song_name)
+    
+    # Then get original files for songs without processed versions
     for f in os.listdir(songs_dir):
         if f.endswith("_original.mp3"):
             song_name = f.replace("_original.mp3", "")
-            songs.append(song_name)
+            if song_name not in songs:
+                songs.append(song_name)
+    
     return sorted(songs)
 
 @st.cache_data(ttl=5)
@@ -554,23 +607,33 @@ def get_uploaded_songs(show_unshared=False):
 
 def delete_song_files(song_name):
     try:
-        original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
-        if os.path.exists(original_path):
-            os.remove(original_path)
+        # Delete all possible file variants
+        files_to_delete = [
+            f"{song_name}_original.mp3",
+            f"{song_name}_accompaniment.mp3",
+            f"{song_name}_original_processed.mp3",
+            f"{song_name}_accompaniment_processed.mp3"
+        ]
         
-        acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
-        if os.path.exists(acc_path):
-            os.remove(acc_path)
+        for filename in files_to_delete:
+            filepath = os.path.join(songs_dir, filename)
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                print(f"✅ Deleted: {filename}")
         
+        # Delete lyrics image
         for ext in [".jpg", ".jpeg", ".png"]:
             lyrics_path = os.path.join(lyrics_dir, f"{song_name}_lyrics_bg{ext}")
             if os.path.exists(lyrics_path):
                 os.remove(lyrics_path)
+                print(f"✅ Deleted lyrics: {lyrics_path}")
         
+        # Delete shared link
         shared_link_path = os.path.join(shared_links_dir, f"{song_name}.json")
         if os.path.exists(shared_link_path):
             os.remove(shared_link_path)
         
+        # Clear caches
         get_song_files_cached.clear()
         get_shared_links_cached.clear()
         get_metadata_cached.clear()
@@ -611,21 +674,23 @@ def process_query_params():
 
 # =============== IMPROVED GET ACCURATE AUDIO DURATION FOR SONG ===============
 def get_song_duration(song_name):
-    """Get accurate duration for a song"""
+    """Get accurate duration for a song - FIXED"""
+    print(f"🔍 Getting duration for: {song_name}")
+    
     metadata = get_metadata_cached()
     
     # Check if we have stored duration in metadata
     if song_name in metadata and "duration" in metadata[song_name]:
         stored_duration = metadata[song_name]["duration"]
         if stored_duration and stored_duration > 0:
-            print(f"✅ Using stored duration for {song_name}: {stored_duration}")
+            print(f"✅ Using stored duration for {song_name}: {stored_duration:.1f}s")
             return stored_duration
     
     # Try processed accompaniment file first
-    acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
-    if os.path.exists(acc_path):
+    processed_acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
+    if os.path.exists(processed_acc_path):
         try:
-            duration = get_audio_duration(acc_path)
+            duration = get_audio_duration(processed_acc_path)
             if duration and duration > 0:
                 # Store in metadata
                 if song_name in metadata:
@@ -635,67 +700,125 @@ def get_song_duration(song_name):
                 
                 save_metadata(metadata)
                 get_metadata_cached.clear()
-                print(f"✅ Calculated accompaniment duration for {song_name}: {duration}")
+                print(f"✅ Processed acc duration for {song_name}: {duration:.1f}s")
                 return duration
         except Exception as e:
-            print(f"⚠️ Failed to get accompaniment duration for {song_name}: {e}")
+            print(f"⚠️ Failed to get processed acc duration for {song_name}: {e}")
     
-    # Try original file as fallback
+    # Try original accompaniment file
+    original_acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
+    if os.path.exists(original_acc_path):
+        try:
+            duration = get_audio_duration(original_acc_path)
+            if duration and duration > 0:
+                print(f"✅ Original acc duration for {song_name}: {duration:.1f}s")
+                return duration
+        except Exception as e:
+            print(f"⚠️ Failed to get original acc duration for {song_name}: {e}")
+    
+    # Try processed original file
+    processed_original_path = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
+    if os.path.exists(processed_original_path):
+        try:
+            duration = get_audio_duration(processed_original_path)
+            if duration and duration > 0:
+                print(f"✅ Processed original duration for {song_name}: {duration:.1f}s")
+                return duration
+        except Exception as e:
+            print(f"⚠️ Failed to get processed original duration for {song_name}: {e}")
+    
+    # Try original file
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
     if os.path.exists(original_path):
         try:
             duration = get_audio_duration(original_path)
             if duration and duration > 0:
-                print(f"✅ Calculated original duration for {song_name}: {duration}")
+                print(f"✅ Original duration for {song_name}: {duration:.1f}s")
                 return duration
         except Exception as e:
             print(f"⚠️ Failed to get original duration for {song_name}: {e}")
     
-    # If we can't determine duration, try to estimate from file size
-    if os.path.exists(acc_path):
-        try:
-            file_size = os.path.getsize(acc_path)
-            # Better estimation: MP3 at 128kbps
-            estimated_duration = (file_size * 8) / (128 * 1024)
-            if estimated_duration > 30:
-                print(f"⚠️ Estimated duration from file size for {song_name}: {estimated_duration}")
-                return estimated_duration
-        except:
-            pass
+    # If we can't determine duration, use file size estimation
+    for path in [processed_acc_path, original_acc_path, processed_original_path, original_path]:
+        if os.path.exists(path):
+            try:
+                file_size = os.path.getsize(path)
+                # Better estimation: MP3 at 128kbps
+                estimated_duration = (file_size * 8) / (128 * 1024)
+                if estimated_duration > 30:  # Only use if reasonable
+                    print(f"⚠️ Estimated duration from file size for {song_name}: {estimated_duration:.1f}s")
+                    return estimated_duration
+            except Exception as e:
+                print(f"⚠️ File size estimation failed for {path}: {e}")
     
     # Return reasonable default
-    print(f"⚠️ Using default duration for {song_name}")
+    print(f"⚠️ Using default duration (180s) for {song_name}")
     return 180
 
 def ensure_audio_processed(song_name):
-    """Ensure audio files are processed for high quality"""
+    """Ensure audio files are processed for high quality and correct duration"""
+    print(f"🔄 Ensuring audio processed for: {song_name}")
+    
     metadata = get_metadata_cached()
     
     if song_name in metadata and metadata[song_name].get("processed", False):
+        print(f"✅ Audio already processed for {song_name}")
         return True
     
     original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
     acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
     
+    if not os.path.exists(original_path) or not os.path.exists(acc_path):
+        print(f"❌ Missing audio files for {song_name}")
+        return False
+    
     # Create processed versions
     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
-    processed_acc = os.path.join(songs_dir, f"{song_name}_accompanment_processed.mp3")
+    processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
     
     try:
         # Process both files
         print(f"🔧 Processing audio for {song_name}...")
+        
+        # Get original duration before processing
+        original_duration = get_audio_duration(original_path)
+        acc_duration = get_audio_duration(acc_path)
+        
+        # Process files
         process_audio_for_quality(original_path, processed_original)
         process_audio_for_quality(acc_path, processed_acc)
         
+        # Verify durations after processing
+        processed_original_duration = get_audio_duration(processed_original)
+        processed_acc_duration = get_audio_duration(processed_acc)
+        
+        # Use the most reliable duration
+        if processed_acc_duration and processed_acc_duration > 0:
+            final_duration = processed_acc_duration
+        elif acc_duration and acc_duration > 0:
+            final_duration = acc_duration
+        elif processed_original_duration and processed_original_duration > 0:
+            final_duration = processed_original_duration
+        else:
+            final_duration = original_duration or 180
+        
         # Update metadata
         if song_name in metadata:
+            metadata[song_name]["duration"] = final_duration
             metadata[song_name]["processed"] = True
         else:
-            metadata[song_name] = {"processed": True, "uploaded_by": "unknown"}
+            metadata[song_name] = {
+                "duration": final_duration,
+                "processed": True,
+                "uploaded_by": "unknown"
+            }
         
         save_metadata(metadata)
         get_metadata_cached.clear()
-        print(f"✅ Audio processed for {song_name}")
+        
+        minutes = int(final_duration // 60)
+        seconds = int(final_duration % 60)
+        print(f"✅ Audio processed for {song_name}: {minutes}:{seconds:02d}")
         return True
     except Exception as e:
         print(f"⚠️ Audio processing failed for {song_name}: {e}")
@@ -1240,7 +1363,8 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                 st.error("❌ Please upload all required files")
             else:
                 song_name = song_name_input.strip()
-
+                
+                # Save original files
                 original_path = os.path.join(songs_dir, f"{song_name}_original.mp3")
                 acc_path = os.path.join(songs_dir, f"{song_name}_accompaniment.mp3")
                 lyrics_ext = os.path.splitext(uploaded_lyrics_image.name)[1]
@@ -1261,10 +1385,11 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     processed_original = os.path.join(songs_dir, f"{song_name}_original_processed.mp3")
                     processed_acc = os.path.join(songs_dir, f"{song_name}_accompaniment_processed.mp3")
                     
+                    # Process files
                     process_audio_for_quality(original_path, processed_original)
                     process_audio_for_quality(acc_path, processed_acc)
                 
-                # Get accurate duration
+                # Get accurate duration from processed file
                 duration = get_audio_duration(processed_acc)
                 if not duration or duration <= 0:
                     duration = get_audio_duration(acc_path)
@@ -1316,46 +1441,46 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
             else:
                 st.warning("❌ No songs uploaded yet.")
         else:
-            for idx, s in enumerate(uploaded_songs):
+            for idx, song in enumerate(uploaded_songs):
                 col1, col2, col3 = st.columns([3, 1, 1])
                 
                 with col1:
-                    # Display song name 
-                    duration = get_song_duration(s)
+                    # Get duration for display
+                    duration = get_song_duration(song)
                     if duration:
                         minutes = int(duration // 60)
                         seconds = int(duration % 60)
-                        display_name = f"✅ *{song}*"
+                        display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
                     else:
-                        display_name = f"🎶 {s} (Duration: Unknown)"
+                        display_name = f"✅ *{song}* (Duration: Unknown)"
                     
                     if st.button(
                         display_name,
-                        key=f"song_name_{s}_{idx}",
+                        key=f"song_name_{song}_{idx}",
                         help="Click to play song",
                         use_container_width=True,
                         type="secondary"
                     ):
-                        open_song_player(s)
+                        open_song_player(song)
                 
                 with col2:
-                    safe_s = quote(s)
+                    safe_s = quote(song)
                     share_url = f"{APP_URL}?song={safe_s}"
                     if st.button(
                         "🔗",
-                        key=f"share_icon_{s}_{idx}",
+                        key=f"share_icon_{song}_{idx}",
                         help="Share link"
                     ):
-                        st.markdown(f"Share URL: {share_url}")
+                        st.markdown(f"**Share URL:** {share_url}")
                         st.info("Link copied to clipboard!")
                 
                 with col3:
                     if st.button(
                         "🗑️",
-                        key=f"delete_{s}_{idx}",
+                        key=f"delete_{song}_{idx}",
                         help="Delete song"
                     ):
-                        st.session_state.confirm_delete = s
+                        st.session_state.confirm_delete = song
                         st.rerun()
             
             if st.session_state.confirm_delete:
@@ -1418,7 +1543,15 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                     safe_song = quote(song)
                     is_shared = song in shared_links_data
                     status = "✅ SHARED" if is_shared else "❌ NOT SHARED"
-                    st.write(f"**{song}** - {status}")
+                    # Add duration info
+                    duration = get_song_duration(song)
+                    if duration:
+                        minutes = int(duration // 60)
+                        seconds = int(duration % 60)
+                        duration_text = f" ({minutes}:{seconds:02d})"
+                    else:
+                        duration_text = ""
+                    st.write(f"**{song}**{duration_text} - {status}")
                 
                 with col2:
                     col_toggle, col_action = st.columns(2)
@@ -1463,23 +1596,39 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.role == "ad
                             """, unsafe_allow_html=True)
 
     elif page_sidebar == "Process Audio":
-        st.header("🔧 Process Audio for Quality")
+        st.header("🔧 Process Audio for Quality & Fix Duration")
         st.info("This will re-process all audio files for better quality and fix duration issues.")
         
         if st.button("🔄 Process All Audio Files", key="process_all_audio"):
             all_songs = get_song_files_cached()
+            if not all_songs:
+                st.warning("No songs to process")
+                st.stop()
+            
             progress_bar = st.progress(0)
             status_text = st.empty()
+            results = []
             
             for idx, song in enumerate(all_songs):
                 status_text.text(f"Processing {song}...")
-                ensure_audio_processed(song)
+                success = ensure_audio_processed(song)
+                results.append((song, success))
                 progress_bar.progress((idx + 1) / len(all_songs))
             
             status_text.text("✅ All audio files processed!")
-            st.success("Audio processing completed successfully!")
+            
+            # Show results
+            success_count = sum(1 for _, success in results if success)
+            if success_count == len(results):
+                st.success(f"✅ All {len(results)} songs processed successfully!")
+            else:
+                st.warning(f"⚠️ Processed {success_count}/{len(results)} songs successfully")
+                for song, success in results:
+                    if not success:
+                        st.error(f"❌ Failed to process: {song}")
+            
             get_metadata_cached.clear()
-            time.sleep(1)
+            time.sleep(2)
             st.rerun()
 
     if st.sidebar.button("Logout", key="admin_logout"):
@@ -1635,7 +1784,7 @@ elif st.session_state.page == "User Dashboard" and st.session_state.role == "use
             if duration:
                 minutes = int(duration // 60)
                 seconds = int(duration % 60)
-                display_name = f"✅ *{song}*"
+                display_name = f"✅ *{song}* ({minutes}:{seconds:02d})"
             else:
                 display_name = f"✅ *{song}*"
             
@@ -1754,13 +1903,17 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     # Use processed files if available, otherwise use original
     if os.path.exists(processed_original_path):
         original_path = processed_original_path
+        print(f"✅ Using processed original: {selected_song}")
     else:
         original_path = os.path.join(songs_dir, f"{selected_song}_original.mp3")
+        print(f"⚠️ Using original (not processed): {selected_song}")
     
     if os.path.exists(processed_accompaniment_path):
         accompaniment_path = processed_accompaniment_path
+        print(f"✅ Using processed accompaniment: {selected_song}")
     else:
         accompaniment_path = os.path.join(songs_dir, f"{selected_song}_accompaniment.mp3")
+        print(f"⚠️ Using accompaniment (not processed): {selected_song}")
 
     lyrics_path = ""
     for ext in [".jpg", ".jpeg", ".png"]:
@@ -1776,6 +1929,10 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     song_duration = get_song_duration(selected_song)
     if not song_duration or song_duration <= 0:
         song_duration = 180
+    
+    minutes = int(song_duration // 60)
+    seconds = int(song_duration % 60)
+    print(f"🎵 Song Duration for {selected_song}: {minutes}:{seconds:02d}")
 
     # ✅ UPDATED KARAOKE TEMPLATE WITH IMPROVED VOICE RECORDING CLARITY
     karaoke_template = """
@@ -2113,9 +2270,9 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           const accBuf = await accRes.arrayBuffer();
           const accDecoded = await audioCtx.decodeAudioData(accBuf);
           
-          // Get ACTUAL duration
-          const actualDuration = accDecoded.duration;
-          console.log("✅ Actual accompaniment duration:", actualDuration, "seconds");
+          // Get ACTUAL duration - USING FIXED DURATION FROM BACKEND
+          const actualDuration = %%SONG_DURATION%%;  // Fixed: Using actual song duration
+          console.log("✅ Fixed accompaniment duration from backend:", actualDuration, "seconds");
           
           accSource = audioCtx.createBufferSource();
           accSource.buffer = accDecoded;
@@ -2289,7 +2446,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           
           status.innerText = "🎙 Recording... Song playing for " + Math.round(actualDuration) + " seconds";
           
-          // AUTO-STOP TIMER
+          // AUTO-STOP TIMER - USING FIXED DURATION
           autoStopTimer = setTimeout(() => {
               if (isRecording) {
                   stopRecording();
