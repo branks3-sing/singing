@@ -143,6 +143,16 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# =============== ADD GOOGLE ADSENSE VERIFICATION META TAG ===============
+# This will be added to the HTML head section for AdSense verification
+adsense_verification = """
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2373888797323762" crossorigin="anonymous"></script>
+<meta name="google-adsense-account" content="ca-pub-2373888797323762">
+"""
+
+# Inject AdSense verification code
+st.markdown(adsense_verification, unsafe_allow_html=True)
+
 # --------- CONFIG: set your deployed app URL here ----------
 APP_URL = "www.branks3.com"
 
@@ -1777,7 +1787,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
     if not song_duration or song_duration <= 0:
         song_duration = 180
 
-    # ✅ FIXED KARAOKE TEMPLATE - PLAYBACK IN SAME INTERFACE
+    # ✅ FIXED KARAOKE TEMPLATE - ORIGINAL SONG PLAYS BUT NOT RECORDED
     karaoke_template = """
 <!doctype html>
 <html>
@@ -1914,33 +1924,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   .audio-player {
       display: none;
   }
-  /* Recording playback video */
-  #recordingVideoPlayer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-      display: none;
-      z-index: 1000;
-  }
-  /* Video controls overlay */
-  .video-controls {
-      position: absolute;
-      bottom: 10%;
-      width: 100%;
-      text-align: center;
-      z-index: 1001;
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-  }
-  .video-controls button {
-      background: rgba(0,0,0,0.7);
-      border: 1px solid rgba(255,255,255,0.3);
-  }
   </style>
 </head>
 <body>
@@ -1972,13 +1955,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
         <button id="newRecordingBtn">New</button>
       </div>
     </div>
-  </div>
-
-  <!-- Video player for recording playback -->
-  <video id="recordingVideoPlayer" controls></video>
-  <div class="video-controls" id="videoControls" style="display:none;">
-    <button onclick="closeVideoPlayer()">Close</button>
-    <button onclick="toggleFullscreen()">Fullscreen</button>
   </div>
 
   <canvas id="recordingCanvas"></canvas>
@@ -2019,8 +1995,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
   const ctx = canvas.getContext("2d");
   const logoImg = new Image();
   logoImg.src = document.getElementById("logoImg").src;
-  const recordingVideoPlayer = document.getElementById("recordingVideoPlayer");
-  const videoControls = document.getElementById("videoControls");
 
   /* ================== CANVAS SETUP ================== */
   canvas.width = 720;
@@ -2301,32 +2275,69 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                   downloadRecordingBtn.href = url;
                   downloadRecordingBtn.download = fileName;
                   
-                  // ✅ FIXED: Play recording in same interface
+                  // Create video element to ensure proper metadata
+                  const tempVideo = document.createElement('video');
+                  tempVideo.src = url;
+                  tempVideo.preload = 'metadata';
+                  
+                  tempVideo.onloadedmetadata = function() {
+                      console.log('Video metadata loaded:', {
+                          duration: tempVideo.duration,
+                          videoWidth: tempVideo.videoWidth,
+                          videoHeight: tempVideo.videoHeight
+                      });
+                  };
+                  
+                  // Playback button
                   playRecordingBtn.onclick = () => {
                       if (!isPlayingRecording) {
-                          // Show video player
-                          recordingVideoPlayer.src = url;
-                          recordingVideoPlayer.style.display = 'block';
-                          videoControls.style.display = 'flex';
+                          if (playRecordingAudio) {
+                              playRecordingAudio.pause();
+                              playRecordingAudio = null;
+                          }
                           
-                          // Hide final output
-                          finalDiv.style.display = 'none';
+                          // Create video element for playback
+                          const videoElement = document.createElement('video');
+                          videoElement.src = url;
+                          videoElement.controls = true;
+                          videoElement.style.position = 'fixed';
+                          videoElement.style.top = '0';
+                          videoElement.style.left = '0';
+                          videoElement.style.width = '100%';
+                          videoElement.style.height = '100%';
+                          videoElement.style.zIndex = '1000';
+                          videoElement.style.backgroundColor = '#000';
+                          document.body.appendChild(videoElement);
                           
-                          // Play the video
-                          recordingVideoPlayer.play();
+                          // Auto-play
+                          videoElement.play();
+                          
+                          // Remove on close
+                          videoElement.onended = () => {
+                              document.body.removeChild(videoElement);
+                              playRecordingBtn.innerText = "▶ Play Recording";
+                              isPlayingRecording = false;
+                          };
+                          
+                          videoElement.onclick = () => {
+                              document.body.removeChild(videoElement);
+                              playRecordingBtn.innerText = "▶ Play Recording";
+                              isPlayingRecording = false;
+                          };
                           
                           playRecordingBtn.innerText = "⏹ Stop";
                           isPlayingRecording = true;
-                          
-                          // Update button text when video ends
-                          recordingVideoPlayer.onended = () => {
-                              closeVideoPlayer();
-                              playRecordingBtn.innerText = "▶ Play";
-                              isPlayingRecording = false;
-                          };
                       } else {
-                          closeVideoPlayer();
-                          playRecordingBtn.innerText = "▶ Play";
+                          // Find and stop any playing video
+                          const videos = document.querySelectorAll('video');
+                          videos.forEach(video => {
+                              video.pause();
+                              if (video.parentNode) {
+                                  video.parentNode.removeChild(video);
+                              }
+                          });
+                          
+                          playRecordingBtn.innerText = "▶ Play Recording";
                           isPlayingRecording = false;
                       }
                   };
@@ -2450,8 +2461,21 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
 
   /* ================== NEW RECORDING ================== */
   newRecordingBtn.onclick = function() {
-      closeVideoPlayer();
       finalDiv.style.display = "none";
+      
+      // Cleanup
+      if (playRecordingAudio) {
+          playRecordingAudio.pause();
+          playRecordingAudio = null;
+      }
+      
+      // Remove any video elements
+      const videos = document.querySelectorAll('video');
+      videos.forEach(video => {
+          if (video.parentNode) {
+              video.parentNode.removeChild(video);
+          }
+      });
       
       // Reset audio
       if (isSongPlaying && originalSource) {
@@ -2481,35 +2505,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           lastRecordingURL = null;
       }
   };
-
-  /* ================== VIDEO PLAYER FUNCTIONS ================== */
-  function closeVideoPlayer() {
-      if (recordingVideoPlayer) {
-          recordingVideoPlayer.pause();
-          recordingVideoPlayer.currentTime = 0;
-          recordingVideoPlayer.style.display = 'none';
-          videoControls.style.display = 'none';
-          recordingVideoPlayer.src = '';
-      }
-      finalDiv.style.display = 'flex';
-      playRecordingBtn.innerText = "▶ Play";
-      isPlayingRecording = false;
-      
-      // Exit fullscreen if active
-      if (document.fullscreenElement) {
-          document.exitFullscreen();
-      }
-  }
-
-  function toggleFullscreen() {
-      if (!document.fullscreenElement) {
-          recordingVideoPlayer.requestFullscreen().catch(err => {
-              console.log("Fullscreen error:", err);
-          });
-      } else {
-          document.exitFullscreen();
-      }
-  }
 
   /* ================== HELPER FUNCTIONS ================== */
   function resetUIOnError() {
@@ -2567,21 +2562,6 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           audioContext.close();
       }
       cleanupAudioSources();
-  });
-
-  /* ================== VIDEO PLAYER EVENT LISTENERS ================== */
-  recordingVideoPlayer.addEventListener('click', function() {
-      if (this.paused) {
-          this.play();
-      } else {
-          this.pause();
-      }
-  });
-
-  document.addEventListener('fullscreenchange', function() {
-      if (!document.fullscreenElement) {
-          videoControls.style.display = 'flex';
-      }
   });
   </script>
 </body>
