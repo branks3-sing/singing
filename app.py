@@ -1965,11 +1965,11 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
       <img class="reel-bg" id="finalBg">
       <div id="finalStatus">Recording Complete!</div>
       <div class="controls">
-        <button id="playRecordingBtn">▶ Play Recording</button>
+        <button id="playRecordingBtn">▶ Play</button>
         <a id="downloadRecordingBtn" href="#" download>
           <button>⬇ Download</button>
         </a>
-        <button id="newRecordingBtn">New Recording</button>
+        <button id="newRecordingBtn">New</button>
       </div>
     </div>
   </div>
@@ -2321,12 +2321,12 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
                           // Update button text when video ends
                           recordingVideoPlayer.onended = () => {
                               closeVideoPlayer();
-                              playRecordingBtn.innerText = "▶ Play Recording";
+                              playRecordingBtn.innerText = "▶ Play";
                               isPlayingRecording = false;
                           };
                       } else {
                           closeVideoPlayer();
-                          playRecordingBtn.innerText = "▶ Play Recording";
+                          playRecordingBtn.innerText = "▶ Play";
                           isPlayingRecording = false;
                       }
                   };
@@ -2492,7 +2492,7 @@ elif st.session_state.page == "Song Player" and st.session_state.get("selected_s
           recordingVideoPlayer.src = '';
       }
       finalDiv.style.display = 'flex';
-      playRecordingBtn.innerText = "▶ Play Recording";
+      playRecordingBtn.innerText = "▶ Play";
       isPlayingRecording = false;
       
       // Exit fullscreen if active
